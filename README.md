@@ -73,9 +73,6 @@ flowchart TB
     %% Core Flow - centrally balanced
     env --> main --> pipeline
     
-    %% Pipeline to Components - balanced layout
-    pipeline --> Components
-    
     %% Component to External connections
     repoMgr <--> gitRepo
     stateMgr <--> stateFile
@@ -85,13 +82,20 @@ flowchart TB
     embedSvc --> embedApi
     qdrantMgr <--> qdrantDb
     
-    %% Pipeline process flow - balanced top to bottom
-    pipeline --> |"1"|repoMgr
-    pipeline --> |"2"|stateMgr
-    pipeline --> |"3"|fileProc
-    pipeline --> |"4"|chunker
-    pipeline --> |"5"|embedSvc
-    pipeline --> |"6"|qdrantMgr
+    %% Pipeline process flow with simplified step labels - removed any disconnected arrows
+    pipeline --> |"step 1"|repoMgr
+    pipeline --> |"step 2"|qdrantMgr
+    pipeline --> |"step 3"|stateMgr
+    pipeline --> |"step 4"|repoMgr
+    pipeline --> |"step 5"|stateMgr
+    pipeline --> |"step 6"|qdrantMgr
+    pipeline --> |"step 7"|fileProc
+    pipeline --> |"step 8"|chunker
+    pipeline --> |"step 9"|embedSvc
+    pipeline --> |"step 10"|qdrantMgr
+    pipeline --> |"step 11"|repoMgr
+    pipeline --> |"step 12"|stateMgr
+    pipeline --> |"step 13"|stateMgr
 ```
 
 The `EmbeddingPipeline` orchestrates the entire process by executing a sequence of steps, coordinating different components. The diagram above visually represents this flow. The steps correspond directly to the numbered comments within the `EmbeddingPipeline.run()` method:
