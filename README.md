@@ -32,78 +32,66 @@ This project provides a configurable pipeline to process files within a Git repo
 ## Architecture / Workflow
 
 ```mermaid
-graph TD
-    %% Define Styles
-    classDef init fill:#D5E8D4,stroke:#82B366,stroke-width:2px,color:#000;       %% Light Green BG
-    classDef orchestrator fill:#DAE8FC,stroke:#6C8EBF,stroke-width:2px,color:#000; %% Light Blue BG
-    classDef component fill:#FFF2CC,stroke:#D6B656,stroke-width:2px,color:#000;    %% Light Yellow BG
-    classDef external fill:#F5F5F5,stroke:#666666,stroke-width:2px,color:#000;     %% Light Grey BG
-    classDef data fill:#FFE6CC,stroke:#D79B00,stroke-width:1px,color:#000;         %% Light Orange BG
+flowchart TB
+    %% Define Styles with higher contrast and simpler look
+    classDef init fill:#9BE09B,stroke:#2D882D,stroke-width:2px,color:#000,rounded:true;
+    classDef orchestrator fill:#85C1E9,stroke:#2471A3,stroke-width:2px,color:#000,rounded:true;
+    classDef component fill:#F9E79F,stroke:#D4AC0D,stroke-width:2px,color:#000,rounded:true;
+    classDef external fill:#E5E5E5,stroke:#424242,stroke-width:2px,color:#000,rounded:true;
+    classDef data fill:#F8C471,stroke:#CA6F1E,stroke-width:2px,color:#000,rounded:true;
 
-    subgraph "Init & Config"
-      direction LR
-      env([.env Configuration]):::external
-      main(main.ts Entry Point):::init
+    %% Main Entry Point
+    main["Main Entry Point"]:::init
+    env["Environment Config"]:::external
+    
+    %% Core Pipeline
+    pipeline["Embedding Pipeline"]:::orchestrator
+    
+    %% Components Group - improved text contrast
+    subgraph Components["<b>Core Components</b>"]
+        repoMgr["Repository Manager"]:::component
+        stateMgr["State Manager"]:::component
+        fileProc["File Processor"]:::component
+        chunker["Chunker"]:::component
+        analysisSvc["Analysis Service"]:::component
+        embedSvc["Embedding Service"]:::component
+        qdrantMgr["Qdrant Manager"]:::component
     end
-
-    subgraph "Pipeline Orchestrator"
-       pipeline(EmbeddingPipeline):::orchestrator
-    end
-
-    subgraph "Core Components (src/)"
-        direction TB
-        repoMgr(RepositoryManager):::component
-        stateMgr(StateManager):::component
-        fileProc(FileProcessor):::component
-        chunker(Chunker):::component
-        analysisSvc(AnalysisService):::component
-        embedSvc(EmbeddingService):::component
-        qdrantMgr(QdrantManager):::component
-    end
-
-    subgraph "External Systems & Data"
-        direction LR
+    style Components fill:none,stroke-dasharray:5 5,stroke:#666,color:white
+    
+    %% External Systems Group - improved text contrast
+    subgraph External["<b>External Systems & Data</b>"]
         gitRepo[(Git Repository)]:::external
         fs[(File System)]:::external
         stateFile[/".file-points.json"/]:::data
-        embedApi{{Embedding API}}:::external
-        llmApi{{Analysis LLM API}}:::external
+        embedApi["Embedding API"]:::external
+        llmApi["Analysis LLM API"]:::external
         qdrantDb[(Qdrant Vector DB)]:::external
-        %% Removed mastraLib node
     end
-
-    %% Initialization
-    env -- "Loads Config" --> main
-    main -- "Creates & Runs" --> pipeline
-
-    %% Component Usage (Pipeline uses components)
-    pipeline -- "Uses" --> repoMgr
-    pipeline -- "Uses" --> stateMgr
-    pipeline -- "Uses" --> fileProc
-    pipeline -- "Uses" --> chunker
-    pipeline -- "Uses" --> embedSvc
-    pipeline -- "Uses" --> qdrantMgr
-    chunker -- "Uses" --> analysisSvc
-    %% Specific dependency for analysis within chunking
-
-    %% External Interactions (Components interact with external systems)
-    repoMgr -- "Interacts" --> gitRepo
-    stateMgr -- "Reads/Writes" --> stateFile
-    fileProc -- "Reads" --> fs
-    analysisSvc -- "Calls" --> llmApi
-    %% Removed chunker -> mastraLib connection
-    embedSvc -- "Calls" --> embedApi
-    qdrantMgr -- "Interacts" --> qdrantDb
-
-    %% Pipeline Step Flow (Grouped by Component, referencing code comments)
-    pipeline -- "Steps 1, 4, 11 (Repo Check, List Files, Get Commit)" --> repoMgr
-    pipeline -- "Steps 3, 5, 12, 13 (Load/Save State, Get Points)" --> stateMgr
-    pipeline -- "Step 7 (Filter/Load Files)" --> fileProc
-    pipeline -- "Step 8 (Chunk Files w/ Analysis)" --> chunker
-    pipeline -- "Step 9 (Embed Chunks)" --> embedSvc
-    pipeline -- "Steps 2, 6, 10 (Collection Mgmt, Delete, Upsert)" --> qdrantMgr
-
-    pipeline -- "Ends" --> main
+    style External fill:none,stroke-dasharray:3 3,stroke:#666,color:white
+    
+    %% Core Flow - centrally balanced
+    env --> main --> pipeline
+    
+    %% Pipeline to Components - balanced layout
+    pipeline --> Components
+    
+    %% Component to External connections
+    repoMgr <--> gitRepo
+    stateMgr <--> stateFile
+    fileProc --> fs
+    chunker --> analysisSvc
+    analysisSvc --> llmApi
+    embedSvc --> embedApi
+    qdrantMgr <--> qdrantDb
+    
+    %% Pipeline process flow - balanced top to bottom
+    pipeline --> |"1"|repoMgr
+    pipeline --> |"2"|stateMgr
+    pipeline --> |"3"|fileProc
+    pipeline --> |"4"|chunker
+    pipeline --> |"5"|embedSvc
+    pipeline --> |"6"|qdrantMgr
 ```
 
 The `EmbeddingPipeline` orchestrates the entire process by executing a sequence of steps, coordinating different components. The diagram above visually represents this flow. The steps correspond directly to the numbered comments within the `EmbeddingPipeline.run()` method:
