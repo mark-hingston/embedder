@@ -33,7 +33,7 @@ export class FileProcessor {
                     continue;
                 }
                 // 2. Skip lock files, state files, and Yarn PnP files early
-                if (isLockFile(relativePath) || /\.yarn/.test(relativePath) || relativePath.endsWith('.file-points.json')) {
+                if (isLockFile(relativePath) || /\.yarn/.test(relativePath)) {
                     skippedLockState++;
                     continue;
                 }

@@ -3,10 +3,12 @@
 This project provides a configurable pipeline to process files within a Git repository, analyse code using a Language Model (LLM), chunk the content intelligently, generate text embeddings, and store them in a Qdrant vector database. It keeps track of processed files and Git commits to efficiently update the embeddings when the repository changes.
 
 ## Features
-
 *   **Git Integration:** Operates on files tracked within a Git repository.
 *   **Differential Updates:** Optionally processes only files that have changed (`A`dded, `M`odified, `D`eleted, `R`enamed, `C`opied) since the last run by comparing against the last known commit hash (requires `DIFF_ONLY=true`). Falls back to a full scan if needed.
-*   **State Management:** Persists the mapping between files and their corresponding Qdrant point IDs, along with the last processed commit hash, in a `.file-points.json` file in the repository root.
+*   **State Management:** Persists the mapping between files and their corresponding Qdrant point IDs, along with the last processed commit hash. Supports two modes configured via `STATE_MANAGER_TYPE`:
+    *   **Azure Blob Storage (`blob`):** Stores state in a specified Azure Blob Storage container.
+    *   **Local File System (`file`):** Stores state in a local JSON file specified by `STATE_FILE_PATH`.
+*   **LLM-Powered Code Analysis:** Uses a configurable LLM (e.g., Azure OpenAI) via the AI SDK to analyse code files, extracting:
 *   **LLM-Powered Code Analysis:** Uses a configurable LLM (e.g., Azure OpenAI) via the AI SDK to analyse code files, extracting:
     *   Overall summary
     *   Relevant tags (keywords, concepts, frameworks)
@@ -50,7 +52,7 @@ flowchart TB
     %% Components Group - improved text contrast
     subgraph Components["<b>Core Components</b>"]
         repoMgr["Repository Manager"]:::component
-        stateMgr["State Manager"]:::component
+        stateMgr["State Manager (Blob/File)"]:::component
         fileProc["File Processor"]:::component
         chunker["Chunker"]:::component
         analysisSvc["Analysis Service"]:::component
@@ -63,7 +65,7 @@ flowchart TB
     subgraph External["<b>External Systems & Data</b>"]
         gitRepo[(Git Repository)]:::external
         fs[(File System)]:::external
-        stateFile[/".file-points.json"/]:::data
+        azureBlob[(Azure Blob Storage)]:::external
         embedApi["Embedding API"]:::external
         llmApi["Analysis LLM API"]:::external
         qdrantDb[(Qdrant Vector DB)]:::external
@@ -75,7 +77,7 @@ flowchart TB
     
     %% Component to External connections
     repoMgr <--> gitRepo
-    stateMgr <--> stateFile
+    stateMgr -- "If Blob" --> azureBlob
     fileProc --> fs
     chunker --> analysisSvc
     analysisSvc --> llmApi
@@ -102,7 +104,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 
 1.  **Check Repository:** The `RepositoryManager` verifies that the target directory is a valid Git repository root. *(Initial check)*
 2.  **Ensure Qdrant Collection:** The `QdrantManager` checks if the target collection exists in Qdrant. If not, it creates the collection along with necessary payload indices (`source`, `tags`, `analysisError`). It also validates vector dimensions and distance metric compatibility if the collection already exists.
-3.  **Load State:** The `StateManager` reads the `.file-points.json` file (if it exists) to load the last processed Git commit hash and the mapping of previously processed files to their Qdrant point IDs.
+3.  **Load State:** The configured `StateManager` (either `BlobStateManager` or `FileStateManager`) reads the state from its source (Azure Blob or local file). If the source doesn't exist, it starts with an empty state. It loads the last processed Git commit hash and the mapping of previously processed files to their Qdrant point IDs.
 4.  **List Files:** The `RepositoryManager` determines which files need processing. Based on the `DIFF_ONLY` setting and the loaded state, it either performs a `git diff` against the last commit or lists all tracked files (`git ls-files`). It outputs sets of `filesToProcess` and `filesToDeletePointsFor`.
 5.  **Identify Points for Deletion:** The `StateManager` uses the loaded state and the `filesToDeletePointsFor` set to compile a list of specific Qdrant point IDs that correspond to outdated file versions or deleted files.
 6.  **Delete Outdated Points:** The `QdrantManager` sends a request to Qdrant to delete the points identified in the previous step. This cleanup happens before adding new data.
@@ -112,7 +114,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 10. **Upsert New Points:** The `QdrantManager` prepares Qdrant point objects (ID, vector, payload) for the new chunks and upserts them into the Qdrant collection in batches, waiting for completion.
 11. **Get Current Commit:** The `RepositoryManager` retrieves the current `HEAD` commit hash from the Git repository.
 12. **Calculate Next State:** The `StateManager` computes the new state by removing entries for deleted/modified files, adding entries for newly processed files (mapping them to their new point IDs), and including the current commit hash obtained in Step 11.
-13. **Save State:** The `StateManager` saves the calculated next state atomically to the `.file-points.json` file.
+13. **Save State:** The `StateManager` saves the calculated next state (as JSON) to its configured destination (Azure Blob or local file), overwriting the previous state.
 
 ## Setup
 
@@ -122,22 +124,41 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
     *   Access to a running Qdrant instance.
     *   Access to an OpenAI-compatible Embedding API endpoint (e.g., OpenAI API, LM Studio, Ollama with OpenAI compatibility).
     *   Access to an Azure OpenAI endpoint for the Code Analysis LLM.
+    *   An Azure Storage Account (Blob Storage) *if* using `STATE_MANAGER_TYPE=blob`.
 
 2.  **Install Dependencies:**
     ```bash
-    npm install
+    npm install # Installs all dependencies, including @azure/storage-blob
     ```
 
 3.  **Create `.env` file:**
     Copy `.env.example` to `.env` and fill in the required values:
 
     ```dotenv
+    # --- State Management ---
+    # Choose 'blob' or 'file'. Default is 'blob' if omitted.
+    # STATE_MANAGER_TYPE=blob
+    STATE_MANAGER_TYPE=file
+
+    # --- Azure Blob Storage Settings (Required if STATE_MANAGER_TYPE=blob) ---
+    # Connection string for your Azure Storage account (get from Azure Portal)
+    # IMPORTANT: Keep this secure, do not commit directly (use .env and add to .gitignore)
+    AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your_storage_account_name;AccountKey=your_storage_account_key;EndpointSuffix=core.windows.net"
+    # Name of the container to store the state file in (will be created if it doesn't exist)
+    AZURE_STORAGE_CONTAINER_NAME="embedding-state-container"
+    # Name of the blob file within the container
+    AZURE_STORAGE_BLOB_NAME="repository-embedding-state.json" # e.g., project-state.json
+
+    # --- File System Settings (Required if STATE_MANAGER_TYPE=file) ---
+    # Path to the state file (relative to project root or absolute). Directory will be created.
+    STATE_FILE_PATH="./.embedder/state.json" # e.g., ./data/project-state.json
+
     # --- Target Repository ---
     # Base directory of the Git repository to process (optional, defaults to current dir)
     # BASE_DIR=/path/to/your/project
 
     # --- Processing Mode ---
-    # Set to true to only process files changed since the last run (based on .file-points.json)
+    # Set to true to only process files changed since the last run (based on state)
     # Set to false or omit to process all tracked files on every run.
     DIFF_ONLY=true
 
@@ -195,7 +216,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 3.  **Output:**
     *   The script logs progress messages to the console.
     *   Upon successful completion, the Qdrant collection (`QDRANT_COLLECTION_NAME`) will contain embeddings for the processed files.
-    *   A `.file-points.json` file will be created or updated in the `BASE_DIR` containing the state information.
+    *   The state information (mapping files to Qdrant points and the last commit hash) will be saved to the configured destination (Azure Blob or local file).
 
 ## Code Structure (`src/`)
 
@@ -203,7 +224,9 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 *   **`embeddingPipeline.ts`**: Orchestrates the overall workflow, coordinating different managers and services.
 *   **`embeddingPipelineOptions.ts`**: Defines the configuration and dependencies needed by the pipeline.
 *   **`repositoryManager.ts`**: Handles Git interactions (checking repo, getting commit, listing changed/all files).
-*   **`stateManager.ts`**: Manages loading and saving the `.file-points.json` state file.
+*   **`stateManager.ts`**: Defines the `StateManager` interface and `FilePointsState` type.
+*   **`blobStateManager.ts`**: Implements `StateManager` using Azure Blob Storage.
+*   **`fileStateManager.ts`**: Implements `StateManager` using the local file system.
 *   **`fileProcessor.ts`**: Filters candidate files, reads content, determines chunking strategy.
 *   **`analysisService.ts`**: Interacts with the LLM to perform code analysis.
 *   **`codeFileAnalysisSchema.ts`**: Defines the Zod schema for the expected LLM analysis output.
