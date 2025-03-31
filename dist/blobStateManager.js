@@ -1,6 +1,6 @@
 // src/blobStateManager.ts
 import { BlobServiceClient, RestError } from "@azure/storage-blob";
-import { EMPTY_STATE } from "./iStateManager.js";
+import { EMPTY_STATE } from "./stateManager.js";
 /**
  * Manages loading and saving the application's state to Azure Blob Storage.
  * The state includes the mapping of processed files to their corresponding

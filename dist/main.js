@@ -8,8 +8,8 @@ import { FileProcessor } from "./fileProcessor.js";
 import { Chunker } from "./chunker.js";
 import { EmbeddingService } from "./embeddingService.js";
 import { QdrantManager } from "./qdrantManager.js";
-// import { StateManager } from "./stateManager.js"; // Remove old import
-import { BlobStateManager } from "./blobStateManager.js"; // Import new manager
+import { BlobStateManager } from "./blobStateManager.js";
+import { FileStateManager } from "./fileStateManager.js"; // + Import FileStateManager
 import { AnalysisService } from "./analysisService.js";
 dotenv.config();
 /**
@@ -20,7 +20,8 @@ async function main() {
     try {
         // --- Configuration Loading & Validation ---
         console.log("Loading configuration from environment variables...");
-        // Required environment variables
+        const stateManagerType = process.env.STATE_MANAGER_TYPE ?? "blob"; // Default to blob
+        // Required environment variables (base set)
         const requiredEnvVars = [
             "EMBEDDING_PROVIDER_NAME",
             "EMBEDDING_PROVIDER_BASE_URL",
@@ -31,10 +32,17 @@ async function main() {
             "SUMMARY_API_KEY",
             "QDRANT_URL",
             "QDRANT_COLLECTION_NAME",
-            "AZURE_STORAGE_CONNECTION_STRING", // Add storage connection string
-            "AZURE_STORAGE_CONTAINER_NAME", // Add container name
-            "AZURE_STORAGE_BLOB_NAME", // Add blob name
         ];
+        // Add state-manager specific required variables
+        if (stateManagerType === "blob") {
+            requiredEnvVars.push("AZURE_STORAGE_CONNECTION_STRING", "AZURE_STORAGE_CONTAINER_NAME", "AZURE_STORAGE_BLOB_NAME");
+        }
+        else if (stateManagerType === "file") {
+            requiredEnvVars.push("STATE_FILE_PATH");
+        }
+        else {
+            throw new Error(`Invalid STATE_MANAGER_TYPE: ${stateManagerType}. Must be 'blob' or 'file'.`);
+        }
         for (const varName of requiredEnvVars) {
             if (!process.env[varName]) {
                 throw new Error(`Missing required environment variable: ${varName}`);
@@ -53,11 +61,15 @@ async function main() {
         const maxConcurrentChunking = parseInt(process.env.MAX_CONCURRENT_CHUNKING ?? "5");
         const embeddingBatchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE ?? "96");
         const embeddingApiDelayMs = parseInt(process.env.EMBEDDING_API_DELAY_MS ?? "1000");
-        const summaryApiDelayMs = parseInt(process.env.SUMMARY_API_DELAY_MS ?? "1000"); // <-- Load summary delay
-        // Load Blob Storage Config
-        const storageConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-        const storageContainerName = process.env.AZURE_STORAGE_CONTAINER_NAME;
-        const storageBlobName = process.env.AZURE_STORAGE_BLOB_NAME;
+        const summaryApiDelayMs = parseInt(process.env.SUMMARY_API_DELAY_MS ?? "1000");
+        // Load State Manager Config based on type
+        let stateManager;
+        if (stateManagerType === "blob") {
+            stateManager = new BlobStateManager(process.env.AZURE_STORAGE_CONNECTION_STRING, process.env.AZURE_STORAGE_CONTAINER_NAME, process.env.AZURE_STORAGE_BLOB_NAME);
+        }
+        else { // stateManagerType === "file"
+            stateManager = new FileStateManager(process.env.STATE_FILE_PATH);
+        }
         // Validate numeric optional config
         if (isNaN(vectorDimensions) || vectorDimensions <= 0)
             throw new Error("EMBEDDING_DIMENSIONS must be a positive integer.");
@@ -76,7 +88,7 @@ async function main() {
         if (isNaN(embeddingApiDelayMs) || embeddingApiDelayMs < 0)
             throw new Error("EMBEDDING_API_DELAY_MS must be a non-negative integer.");
         if (isNaN(summaryApiDelayMs) || summaryApiDelayMs < 0)
-            throw new Error("SUMMARY_API_DELAY_MS must be a non-negative integer."); // <-- Validate summary delay
+            throw new Error("SUMMARY_API_DELAY_MS must be a non-negative integer.");
         if (!["Cosine", "Euclid", "Dot"].includes(distanceMetric))
             throw new Error("DISTANCE_METRIC must be one of 'Cosine', 'Euclid', 'Dot'.");
         const customChunkingOptions = {};
@@ -99,19 +111,16 @@ async function main() {
             apiKey: process.env.QDRANT_API_KEY,
             https: process.env.QDRANT_USE_HTTPS === "true",
         });
-        // Instantiate components/managers
-        // const stateManager = new StateManager(baseDir); // Remove old instantiation
-        const stateManager = new BlobStateManager(// Use interface type
-        storageConnectionString, storageContainerName, storageBlobName);
-        // Ensure the container exists before proceeding
-        await stateManager.ensureContainerExists(); // Type assertion needed to call specific method
-        const repositoryManager = new RepositoryManager(baseDir);
+        // --- Initialize State Manager Specifics ---
+        if (stateManager instanceof BlobStateManager) {
+            console.log("Using BlobStateManager. Ensuring container exists...");
+            await stateManager.ensureContainerExists();
+        } // FileStateManager ensures directory existence during load/save
         const fileProcessor = new FileProcessor(baseDir);
         const analysisService = new AnalysisService(summaryModel);
-        // Pass the summaryApiDelayMs to the Chunker constructor
-        const chunker = new Chunker(analysisService, summaryApiDelayMs, // <-- Pass delay here
-        customChunkingOptions, defaultChunkSize, defaultChunkOverlap);
+        const chunker = new Chunker(analysisService, summaryApiDelayMs, customChunkingOptions, defaultChunkSize, defaultChunkOverlap);
         const embeddingService = new EmbeddingService(embeddingModel, embeddingBatchSize, embeddingApiDelayMs);
+        const repositoryManager = new RepositoryManager(baseDir); // Moved after state manager init
         const qdrantManager = new QdrantManager(qdrantClient, collectionName, vectorDimensions, distanceMetric, deleteBatchSize, upsertBatchSize);
         console.log("Services initialized.");
         // --- Pipeline Setup ---
@@ -125,7 +134,7 @@ async function main() {
             chunker,
             embeddingService,
             qdrantManager,
-            stateManager, // Pass the BlobStateManager instance (as IStateManager)
+            stateManager,
         };
         const pipeline = new EmbeddingPipeline(pipelineOptions);
         console.log("Embedding pipeline created.");
