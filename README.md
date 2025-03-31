@@ -78,6 +78,7 @@ flowchart TB
     %% Component to External connections
     repoMgr <--> gitRepo
     stateMgr -- "If Blob" --> azureBlob
+    stateMgr -- "If File" --> fs
     fileProc --> fs
     chunker --> analysisSvc
     analysisSvc --> llmApi
