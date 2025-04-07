@@ -117,7 +117,9 @@ export class BlobStateManager {
         }
         return Array.from(pointIds);
     }
-    calculateNextState(currentState, filesToDeletePointsFor, newFilePoints, currentCommit) {
+    calculateNextState(currentState, filesToDeletePointsFor, newFilePoints, // Points successfully upserted in this run
+    pendingChunks, // Chunks generated but not yet upserted
+    currentCommit) {
         const nextFilesState = { ...currentState.files };
         for (const file of filesToDeletePointsFor) {
             delete nextFilesState[file];
@@ -125,8 +127,20 @@ export class BlobStateManager {
         for (const [file, points] of Object.entries(newFilePoints)) {
             nextFilesState[file] = points;
         }
+        // Also remove pending chunks for files whose points are being deleted/updated
+        const nextPendingChunks = { ...(currentState.pendingChunks ?? {}) };
+        for (const file of filesToDeletePointsFor) {
+            delete nextPendingChunks[file];
+        }
+        // Add any new pending chunks from this run
+        if (pendingChunks) {
+            for (const [file, chunks] of Object.entries(pendingChunks)) {
+                nextPendingChunks[file] = chunks;
+            }
+        }
         const nextState = {
             files: nextFilesState,
+            pendingChunks: Object.keys(nextPendingChunks).length > 0 ? nextPendingChunks : undefined, // Store only if not empty
             lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit
         };
         return nextState;

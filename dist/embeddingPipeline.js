@@ -35,6 +35,7 @@ export class EmbeddingPipeline {
                 const currentCommit = await this.options.repositoryManager.getCurrentCommit();
                 // Calculate next state reflecting only deletions and the current commit hash
                 const nextState = this.options.stateManager.calculateNextState(previousState, filesToDeletePointsFor, {}, // No new points
+                undefined, // No pending chunks either
                 currentCommit);
                 await this.options.stateManager.saveState(nextState);
                 console.log("Embedding pipeline finished: Only deletions were processed.");
@@ -48,19 +49,66 @@ export class EmbeddingPipeline {
                 console.log("No chunks were generated from the files processed.");
                 const currentCommit = await this.options.repositoryManager.getCurrentCommit();
                 const nextState = this.options.stateManager.calculateNextState(previousState, filesToDeletePointsFor, {}, // No new points
+                undefined, // No pending chunks either
                 currentCommit);
                 await this.options.stateManager.saveState(nextState);
                 console.log("Embedding pipeline finished: Deletions processed, no new chunks generated.");
                 return;
             }
-            // 7. Aggregate all generated chunks from all files into a single list for embedding
-            const allChunksToEmbed = [];
+            // 7. Combine pending chunks (if any) with newly generated chunks
+            const allChunksToProcessMap = new Map();
+            let pendingChunkCount = 0;
+            let newChunkCount = 0;
+            // Add pending chunks from previous state
+            if (previousState.pendingChunks && Object.keys(previousState.pendingChunks).length > 0) {
+                console.log(`Resuming with ${Object.keys(previousState.pendingChunks).length} files containing pending chunks from previous run.`);
+                for (const [sourceFile, chunks] of Object.entries(previousState.pendingChunks)) {
+                    allChunksToProcessMap.set(sourceFile, chunks);
+                    pendingChunkCount += chunks.length;
+                }
+            }
+            // Add newly generated chunks (overwriting pending ones for the same file if reprocessing occurred)
             for (const [sourceFile, chunks] of fileChunksMap.entries()) {
+                // If we are reprocessing a file that also had pending chunks, the new chunks take precedence.
+                // The old points were deleted earlier, and the pending state for this file will be overwritten below.
+                allChunksToProcessMap.set(sourceFile, chunks);
+                if (!previousState.pendingChunks?.[sourceFile]) { // Avoid double counting if file was pending and re-chunked
+                    newChunkCount += chunks.length;
+                }
+                else {
+                    // Adjust counts if overwriting pending chunks
+                    pendingChunkCount -= previousState.pendingChunks[sourceFile].length;
+                    newChunkCount += chunks.length;
+                }
+            }
+            // Aggregate all chunks into a list for embedding
+            const allChunksToEmbed = [];
+            for (const [sourceFile, chunks] of allChunksToProcessMap.entries()) {
                 chunks.forEach(chunk => {
                     allChunksToEmbed.push({ chunk, sourceFile });
                 });
             }
-            console.log(`Prepared ${allChunksToEmbed.length} total chunks for embedding from ${fileChunksMap.size} files.`);
+            if (allChunksToEmbed.length === 0) {
+                console.log("No pending or new chunks to process.");
+                // Save state reflecting only deletions and commit hash
+                const currentCommit = await this.options.repositoryManager.getCurrentCommit();
+                const finalState = this.options.stateManager.calculateNextState(previousState, filesToDeletePointsFor, {}, // No new points upserted
+                undefined, // No pending chunks remain
+                currentCommit);
+                await this.options.stateManager.saveState(finalState);
+                console.log("Embedding pipeline finished: No chunks to embed.");
+                return;
+            }
+            console.log(`Prepared ${allChunksToEmbed.length} total chunks (${pendingChunkCount} pending, ${newChunkCount} new) for embedding from ${allChunksToProcessMap.size} files.`);
+            // 7.5 Save intermediate state *before* embedding, including all chunks marked as pending
+            console.log("Saving intermediate state with pending chunks before embedding...");
+            const intermediateCommit = await this.options.repositoryManager.getCurrentCommit(); // Get commit hash *now*
+            const intermediateState = this.options.stateManager.calculateNextState(previousState, filesToDeletePointsFor, // Files whose old points were deleted
+            {}, // No points have been upserted *yet* in this stage
+            Object.fromEntries(allChunksToProcessMap.entries()), // Mark *all* current chunks as pending
+            intermediateCommit);
+            await this.options.stateManager.saveState(intermediateState);
+            console.log("Intermediate state saved.");
             // 8. Generate embeddings for all chunk texts in batches
             const chunkTexts = allChunksToEmbed.map(item => item.chunk.text);
             const embeddings = await this.options.embeddingService.embedTexts(chunkTexts);
@@ -93,8 +141,10 @@ export class EmbeddingPipeline {
             // 11. Calculate and save the final state *after* successful upsert
             // Get the current commit hash *after* all processing is done but *before* saving state.
             const currentCommit = await this.options.repositoryManager.getCurrentCommit();
-            const finalState = this.options.stateManager.calculateNextState(previousState, filesToDeletePointsFor, // Files whose old points were targeted for deletion
+            const finalState = this.options.stateManager.calculateNextState(intermediateState, // Start from the state we saved before embedding
+            new Set(), // No *additional* files need points deleted at this stage
             newFilePointsState, // Mapping of files to their new points successfully upserted in this run
+            undefined, // Crucially, clear pending chunks as embedding/upsert succeeded
             currentCommit // Current repository commit hash
             );
             await this.options.stateManager.saveState(finalState);

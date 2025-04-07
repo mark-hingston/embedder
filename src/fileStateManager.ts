@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { StateManager, FilePointsState, EMPTY_STATE } from './stateManager.js';
+import { Chunk } from './chunk.js';
 
 /**
  * Implements the StateManager interface using the local file system.
@@ -108,7 +109,8 @@ export class FileStateManager implements StateManager {
   calculateNextState(
     currentState: FilePointsState,
     filesToDeletePointsFor: Set<string>,
-    newFilePoints: Record<string, string[]>,
+    newFilePoints: Record<string, string[]>, // Points successfully upserted in this run
+    pendingChunks?: Record<string, Chunk[]>, // Chunks generated but not yet upserted
     currentCommit?: string
   ): FilePointsState {
     const nextStateFiles = { ...currentState.files };
@@ -125,8 +127,21 @@ export class FileStateManager implements StateManager {
       nextStateFiles[file] = newFilePoints[file];
     }
 
+    // Also remove pending chunks for files whose points are being deleted/updated
+    const nextPendingChunks = { ...(currentState.pendingChunks ?? {}) };
+    for (const file of filesToDeletePointsFor) {
+        delete nextPendingChunks[file];
+    }
+    // Add any new pending chunks from this run
+    if (pendingChunks) {
+        for (const [file, chunks] of Object.entries(pendingChunks)) {
+            nextPendingChunks[file] = chunks;
+        }
+    }
+
     return {
       files: nextStateFiles,
+      pendingChunks: Object.keys(nextPendingChunks).length > 0 ? nextPendingChunks : undefined, // Store only if not empty
       lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit, // Keep old commit if new one isn't provided
     };
   }

@@ -1,11 +1,15 @@
 /**
  * Defines the structure of the state persisted between runs.
  */
+import { Chunk } from "./chunk.js";
+
 export type FilePointsState = {
   /** A record mapping relative file paths to an array of Qdrant point IDs associated with that file. */
   files: Record<string, string[]>;
   /** The Git commit hash that was processed in the last successful run. Used for diffing. */
   lastProcessedCommit?: string;
+  /** Chunks generated in a previous run that are pending embedding and upserting. Key is relative file path. */
+  pendingChunks?: Record<string, Chunk[]>;
 };
 
 /**
@@ -45,10 +49,11 @@ export interface StateManager {
   calculateNextState(
     currentState: FilePointsState,
     filesToDeletePointsFor: Set<string>,
-    newFilePoints: Record<string, string[]>,
+    newFilePoints: Record<string, string[]>, // Points successfully upserted in this run
+    pendingChunks?: Record<string, Chunk[]>, // Chunks generated but not yet upserted
     currentCommit?: string
   ): FilePointsState;
 }
 
 // Default empty state constant
-export const EMPTY_STATE: FilePointsState = { files: {}, lastProcessedCommit: undefined };
+export const EMPTY_STATE: FilePointsState = { files: {}, pendingChunks: {}, lastProcessedCommit: undefined };

@@ -101,7 +101,9 @@ export class FileStateManager {
      * @param currentCommit The current Git commit hash to store in the next state.
      * @returns The calculated next FilePointsState.
      */
-    calculateNextState(currentState, filesToDeletePointsFor, newFilePoints, currentCommit) {
+    calculateNextState(currentState, filesToDeletePointsFor, newFilePoints, // Points successfully upserted in this run
+    pendingChunks, // Chunks generated but not yet upserted
+    currentCommit) {
         const nextStateFiles = { ...currentState.files };
         // Remove entries for files whose points were deleted
         for (const file of filesToDeletePointsFor) {
@@ -113,8 +115,20 @@ export class FileStateManager {
             // old points for modified files have already been deleted from Qdrant.
             nextStateFiles[file] = newFilePoints[file];
         }
+        // Also remove pending chunks for files whose points are being deleted/updated
+        const nextPendingChunks = { ...(currentState.pendingChunks ?? {}) };
+        for (const file of filesToDeletePointsFor) {
+            delete nextPendingChunks[file];
+        }
+        // Add any new pending chunks from this run
+        if (pendingChunks) {
+            for (const [file, chunks] of Object.entries(pendingChunks)) {
+                nextPendingChunks[file] = chunks;
+            }
+        }
         return {
             files: nextStateFiles,
+            pendingChunks: Object.keys(nextPendingChunks).length > 0 ? nextPendingChunks : undefined, // Store only if not empty
             lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit, // Keep old commit if new one isn't provided
         };
     }

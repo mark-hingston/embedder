@@ -1,6 +1,7 @@
 // src/blobStateManager.ts
 import { BlobServiceClient, ContainerClient, BlockBlobClient, StorageSharedKeyCredential, RestError } from "@azure/storage-blob";
 import { StateManager, FilePointsState, EMPTY_STATE } from "./stateManager.js";
+import { Chunk } from "./chunk.js";
 
 /**
  * Manages loading and saving the application's state to Azure Blob Storage.
@@ -133,7 +134,8 @@ export class BlobStateManager implements StateManager {
   calculateNextState(
     currentState: FilePointsState,
     filesToDeletePointsFor: Set<string>,
-    newFilePoints: Record<string, string[]>,
+    newFilePoints: Record<string, string[]>, // Points successfully upserted in this run
+    pendingChunks?: Record<string, Chunk[]>, // Chunks generated but not yet upserted
     currentCommit?: string
   ): FilePointsState {
     const nextFilesState = { ...currentState.files };
@@ -146,8 +148,22 @@ export class BlobStateManager implements StateManager {
         nextFilesState[file] = points;
     }
 
+    // Also remove pending chunks for files whose points are being deleted/updated
+    const nextPendingChunks = { ...(currentState.pendingChunks ?? {}) };
+    for (const file of filesToDeletePointsFor) {
+        delete nextPendingChunks[file];
+    }
+    // Add any new pending chunks from this run
+    if (pendingChunks) {
+        for (const [file, chunks] of Object.entries(pendingChunks)) {
+            nextPendingChunks[file] = chunks;
+        }
+    }
+
+
     const nextState: FilePointsState = {
       files: nextFilesState,
+      pendingChunks: Object.keys(nextPendingChunks).length > 0 ? nextPendingChunks : undefined, // Store only if not empty
       lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit
     };
 

@@ -94,28 +94,31 @@ flowchart TB
     pipeline --> |"step 6"|qdrantMgr
     pipeline --> |"step 7"|fileProc
     pipeline --> |"step 8"|chunker
-    pipeline --> |"step 9"|embedSvc
-    pipeline --> |"step 10"|qdrantMgr
-    pipeline --> |"step 11"|repoMgr
-    pipeline --> |"step 12"|stateMgr
+    pipeline --> |"step 9"|stateMgr
+    pipeline --> |"step 10"|embedSvc
+    pipeline --> |"step 11"|qdrantMgr
+    pipeline --> |"step 12"|repoMgr
     pipeline --> |"step 13"|stateMgr
+    pipeline --> |"step 14"|stateMgr
 ```
 
 The `EmbeddingPipeline` orchestrates the entire process by executing a sequence of steps, coordinating different components. The diagram above visually represents this flow. The steps correspond directly to the numbered comments within the `EmbeddingPipeline.run()` method:
 
 1.  **Check Repository:** The `RepositoryManager` verifies that the target directory is a valid Git repository root. *(Initial check)*
 2.  **Ensure Qdrant Collection:** The `QdrantManager` checks if the target collection exists in Qdrant. If not, it creates the collection along with necessary payload indices (`source`, `tags`, `analysisError`). It also validates vector dimensions and distance metric compatibility if the collection already exists.
-3.  **Load State:** The configured `StateManager` (either `BlobStateManager` or `FileStateManager`) reads the state from its source (Azure Blob or local file). If the source doesn't exist, it starts with an empty state. It loads the last processed Git commit hash and the mapping of previously processed files to their Qdrant point IDs.
+3.  **Load State:** The configured `StateManager` (either `BlobStateManager` or `FileStateManager`) reads the state from its source (Azure Blob or local file). If the source doesn't exist, it starts with an empty state. It loads the last processed Git commit hash, the mapping of previously processed files to their Qdrant point IDs, and any `pendingChunks` from a previous incomplete run.
 4.  **List Files:** The `RepositoryManager` determines which files need processing. Based on the `DIFF_ONLY` setting and the loaded state, it either performs a `git diff` against the last commit or lists all tracked files (`git ls-files`). It outputs sets of `filesToProcess` and `filesToDeletePointsFor`.
 5.  **Identify Points for Deletion:** The `StateManager` uses the loaded state and the `filesToDeletePointsFor` set to compile a list of specific Qdrant point IDs that correspond to outdated file versions or deleted files.
 6.  **Delete Outdated Points:** The `QdrantManager` sends a request to Qdrant to delete the points identified in the previous step. This cleanup happens before adding new data.
 7.  **Filter & Load Files:** The `FileProcessor` takes the `filesToProcess` set, filters out non-text files (binaries, lock files), reads the content of valid text files, and determines the appropriate chunking strategy (`code`, `html`, etc.) for each.
-8.  **Analyze & Chunk Files:** The `Chunker` processes the valid files concurrently. For each file, it uses the `AnalysisService` to get LLM-generated metadata and then chunks the content using the appropriate strategy (`@mastra/rag`), embedding the analysis results into the chunk metadata. Configured delays (`SUMMARY_API_DELAY_MS`) are applied between analysis calls.
-9.  **Generate Embeddings:** The `EmbeddingService` takes all the text chunks, batches them, and calls the configured Embedding API (with delays `EMBEDDING_API_DELAY_MS` and retries) to generate vector embeddings for each chunk.
-10. **Upsert New Points:** The `QdrantManager` prepares Qdrant point objects (ID, vector, payload) for the new chunks and upserts them into the Qdrant collection in batches, waiting for completion.
-11. **Get Current Commit:** The `RepositoryManager` retrieves the current `HEAD` commit hash from the Git repository.
-12. **Calculate Next State:** The `StateManager` computes the new state by removing entries for deleted/modified files, adding entries for newly processed files (mapping them to their new point IDs), and including the current commit hash obtained in Step 11.
-13. **Save State:** The `StateManager` saves the calculated next state (as JSON) to its configured destination (Azure Blob or local file), overwriting the previous state.
+8.  **Analyze & Chunk Files:** The `Chunker` processes the valid files concurrently. For each file, it uses the `AnalysisService` to get LLM-generated metadata and then chunks the content using the appropriate strategy (`@mastra/rag`), embedding the analysis results into the chunk metadata. Configured delays (`SUMMARY_API_DELAY_MS`) are applied between analysis calls. It then combines these newly generated chunks with any `pendingChunks` loaded from the previous state.
+9.  **Save Intermediate State:** The `StateManager` saves an *intermediate state* to its configured destination. This state includes all combined chunks (pending + new) marked as `pendingChunks`, along with the current commit hash and the results of the point deletions from Step 6. This allows the pipeline to resume from this point if the subsequent embedding or upsert steps fail.
+10. **Generate Embeddings:** The `EmbeddingService` takes the combined list of text chunks, batches them, and calls the configured Embedding API (with delays `EMBEDDING_API_DELAY_MS` and retries) to generate vector embeddings for each chunk.
+11. **Upsert New Points:** The `QdrantManager` prepares Qdrant point objects (ID, vector, payload) for the new chunks and upserts them into the Qdrant collection in batches, waiting for completion.
+12. **Get Current Commit:** The `RepositoryManager` retrieves the current `HEAD` commit hash from the Git repository (this might be the same as the one saved in the intermediate state, but retrieved again for consistency).
+13. **Calculate *Final* State:** The `StateManager` computes the *final* state based on the *intermediate state* saved in Step 9. It updates the `files` mapping with the `newFilePointsState` (mapping files to their newly upserted point IDs) and clears the `pendingChunks` field (as they are now successfully processed). The current commit hash is also included.
+14. **Save *Final* State:** The `StateManager` saves the calculated *final* state (as JSON) to its configured destination (Azure Blob or local file), overwriting the intermediate state.
+13. **Save *Final* State:** The `StateManager` saves the calculated *final* state (as JSON) to its configured destination (Azure Blob or local file), overwriting the intermediate state.
 
 ## Setup
 
