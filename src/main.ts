@@ -36,7 +36,8 @@ async function main() {
       "SUMMARY_RESOURCE_NAME",
       "SUMMARY_DEPLOYMENT",
       "SUMMARY_API_KEY",
-      "QDRANT_URL",
+      "QDRANT_HOST",
+      "QDRANT_PORT",
       "QDRANT_COLLECTION_NAME",
     ];
 
@@ -73,6 +74,7 @@ async function main() {
     const embeddingBatchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE ?? "96");
     const embeddingApiDelayMs = parseInt(process.env.EMBEDDING_API_DELAY_MS ?? "1000");
     const summaryApiDelayMs = parseInt(process.env.SUMMARY_API_DELAY_MS ?? "1000");
+    const qdrantPort = parseInt(process.env.QDRANT_PORT ?? "6333");
 
     // Load State Manager Config based on type
     let stateManager: StateManager;
@@ -97,6 +99,7 @@ async function main() {
     if (isNaN(embeddingApiDelayMs) || embeddingApiDelayMs < 0) throw new Error("EMBEDDING_API_DELAY_MS must be a non-negative integer.");
     if (isNaN(summaryApiDelayMs) || summaryApiDelayMs < 0) throw new Error("SUMMARY_API_DELAY_MS must be a non-negative integer.");
     if (!["Cosine", "Euclid", "Dot"].includes(distanceMetric)) throw new Error("DISTANCE_METRIC must be one of 'Cosine', 'Euclid', 'Dot'.");
+    if (isNaN(qdrantPort) || qdrantPort <= 0) throw new Error("QDRANT_PORT must be a positive integer.");
 
     const customChunkingOptions: Partial<FileTypeChunkingOptions> = {};
     console.log("Configuration loaded successfully.");
@@ -118,7 +121,8 @@ async function main() {
     const summaryModel = summaryProvider(process.env.SUMMARY_DEPLOYMENT!);
 
     const qdrantClient = new QdrantClient({
-      url: process.env.QDRANT_URL!,
+      host: process.env.QDRANT_HOST!,
+      port: qdrantPort,
       apiKey: process.env.QDRANT_API_KEY,
       https: process.env.QDRANT_USE_HTTPS === "true",
     });

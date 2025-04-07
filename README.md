@@ -179,7 +179,8 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
     SUMMARY_API_DELAY_MS=1000 # Delay after each analysis call (ms) - useful for rate limiting (optional, default 1000ms)
 
     # --- Qdrant Configuration ---
-    QDRANT_URL=http://localhost:6333 # URL of your Qdrant instance
+    QDRANT_HOST=localhost: # Host of your Qdrant instance
+    QDRANT_PORT=6333 # Port of your Qdrant instance
     QDRANT_API_KEY= # Optional Qdrant API Key if authentication is enabled
     QDRANT_COLLECTION_NAME=my_code_embeddings # Name for the Qdrant collection
     # QDRANT_USE_HTTPS=false # Set to true if Qdrant uses HTTPS (optional, default false)
