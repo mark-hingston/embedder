@@ -175,6 +175,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
     # --- Code Analysis LLM Configuration (Azure OpenAI) ---
     SUMMARY_RESOURCE_NAME=your_azure_resource_name # Azure OpenAI resource name
     SUMMARY_DEPLOYMENT=your_gpt4_deployment_id # Deployment ID (e.g., gpt-4o)
+    SUMMARY_API_VERSION=2024-12-01-preview
     SUMMARY_API_KEY=your_azure_api_key # Azure OpenAI API Key
     SUMMARY_API_DELAY_MS=1000 # Delay after each analysis call (ms) - useful for rate limiting (optional, default 1000ms)
 

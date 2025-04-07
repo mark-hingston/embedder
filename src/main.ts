@@ -35,6 +35,7 @@ async function main() {
       "EMBEDDING_DIMENSIONS",
       "SUMMARY_RESOURCE_NAME",
       "SUMMARY_DEPLOYMENT",
+      "SUMMARY_API_VERSION",
       "SUMMARY_API_KEY",
       "QDRANT_HOST",
       "QDRANT_PORT",
@@ -116,7 +117,8 @@ async function main() {
 
     const summaryProvider = createAzure({
       resourceName: process.env.SUMMARY_RESOURCE_NAME,
-      apiKey: process.env.SUMMARY_API_KEY
+      apiKey: process.env.SUMMARY_API_KEY,
+      apiVersion: process.env.SUMMARY_API_VERSION
     });
     const summaryModel = summaryProvider(process.env.SUMMARY_DEPLOYMENT!);
 
