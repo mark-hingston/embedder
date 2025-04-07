@@ -74,7 +74,16 @@ export class FileStateManager implements StateManager {
       await this.ensureStateDirectoryExists(); // Ensure directory exists before writing
       const data = JSON.stringify(state, null, 2); // Pretty print JSON
       await fs.writeFile(this.stateFilePath, data, 'utf-8');
-      console.log(`State saved successfully to ${this.stateFilePath}`);
+      const numFilesWithPoints = Object.keys(state.files).length;
+      const numFilesWithPending = state.pendingChunks ? Object.keys(state.pendingChunks).length : 0;
+      let logMessage = `State saved successfully to ${this.stateFilePath} (Commit: ${state.lastProcessedCommit || 'N/A'})`;
+      if (numFilesWithPending > 0) {
+          logMessage += `\n  - Files with successfully processed points: ${numFilesWithPoints}`;
+          logMessage += `\n  - Files with pending chunks: ${numFilesWithPending}`;
+      } else {
+          logMessage = `State saved successfully for ${numFilesWithPoints} files to ${this.stateFilePath} (Commit: ${state.lastProcessedCommit || 'N/A'})`; // Keep simpler format if no pending
+      }
+      console.log(logMessage);
     } catch (error) {
       console.error(`Error saving state to ${this.stateFilePath}:`, error);
       throw error;

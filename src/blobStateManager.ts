@@ -103,8 +103,16 @@ export class BlobStateManager implements StateManager {
    * @param state The FilePointsState object to save.
    */
   async saveState(state: FilePointsState): Promise<void> {
-    const numFiles = Object.keys(state.files).length;
-    console.log(`Saving state for ${numFiles} files (Commit: ${state.lastProcessedCommit || 'N/A'}) to blob '${this.blobName}'...`);
+    const numFilesWithPoints = Object.keys(state.files).length;
+    const numFilesWithPending = state.pendingChunks ? Object.keys(state.pendingChunks).length : 0;
+    let logMessage = `Saving state (Commit: ${state.lastProcessedCommit || 'N/A'}) to blob '${this.blobName}'...`;
+    if (numFilesWithPending > 0) {
+        logMessage += `\n  - Files with successfully processed points: ${numFilesWithPoints}`;
+        logMessage += `\n  - Files with pending chunks: ${numFilesWithPending}`;
+    } else {
+        logMessage = `Saving state for ${numFilesWithPoints} files (Commit: ${state.lastProcessedCommit || 'N/A'}) to blob '${this.blobName}'...`; // Keep original format if no pending
+    }
+    console.log(logMessage);
     const blobClient = this.getBlockBlobClient();
     try {
       const stateString = JSON.stringify(state, null, 2); // Pretty-print JSON
