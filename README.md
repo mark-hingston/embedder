@@ -4,8 +4,12 @@ This project provides a configurable pipeline to process files within a Git repo
 
 ## Features
 *   **Git Integration:** Operates on files tracked within a Git repository.
-*   **Differential Updates:** Optionally processes only files that have changed (`A`dded, `M`odified, `D`eleted, `R`enamed, `C`opied) since the last run by comparing against the last known commit hash (requires `DIFF_ONLY=true`). Falls back to a full scan if needed.
-*   **State Management:** Persists the mapping between files and their corresponding Qdrant point IDs, along with the last processed commit hash. Supports two modes configured via `STATE_MANAGER_TYPE`:
+*   **Differential Updates:** Processes only files that have changed (`A`dded, `M`odified, `D`eleted, `R`enamed, `C`opied) since a specific base commit. This base commit is determined by:
+    *   The `DIFF_FROM_COMMIT` environment variable, if set (takes highest priority).
+    *   The `lastProcessedCommit` stored in the state file, if `DIFF_ONLY=true` is set and `DIFF_FROM_COMMIT` is not.
+    *   If neither `DIFF_FROM_COMMIT` is set nor `DIFF_ONLY=true`, a full scan of all tracked files is performed.
+    *   The pipeline attempts to fetch full Git history (`git fetch --depth=0`) if the specified `DIFF_FROM_COMMIT` is not found locally. An error occurs if the commit remains invalid after fetching.
+*   **State Management:** Persists the mapping between files and their corresponding Qdrant point IDs, along with the `lastProcessedCommit` hash representing the repository state successfully processed in the *previous* run. Supports two modes configured via `STATE_MANAGER_TYPE`:
     *   **Azure Blob Storage (`blob`):** Stores state in a specified Azure Blob Storage container.
     *   **Local File System (`file`):** Stores state in a local JSON file specified by `STATE_FILE_PATH`.
 *   **LLM-Powered Code Analysis:** Uses a configurable LLM (e.g., Azure OpenAI) via the AI SDK to analyse code files, extracting:
@@ -107,8 +111,8 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 1.  **Check Repository:** The `RepositoryManager` verifies that the target directory is a valid Git repository root. *(Initial check)*
 2.  **Ensure Qdrant Collection:** The `QdrantManager` checks if the target collection exists in Qdrant. If not, it creates the collection along with necessary payload indices (`source`, `tags`, `analysisError`). It also validates vector dimensions and distance metric compatibility if the collection already exists.
 3.  **Load State:** The configured `StateManager` (either `BlobStateManager` or `FileStateManager`) reads the state from its source (Azure Blob or local file). If the source doesn't exist, it starts with an empty state. It loads the last processed Git commit hash, the mapping of previously processed files to their Qdrant point IDs, and any `pendingChunks` from a previous incomplete run.
-4.  **List Files:** The `RepositoryManager` determines which files need processing. Based on the `DIFF_ONLY` setting and the loaded state, it either performs a `git diff` against the last commit or lists all tracked files (`git ls-files`). It outputs sets of `filesToProcess` and `filesToDeletePointsFor`.
-5.  **Identify Points for Deletion:** The `StateManager` uses the loaded state and the `filesToDeletePointsFor` set to compile a list of specific Qdrant point IDs that correspond to outdated file versions or deleted files.
+4.  **List Files:** The `RepositoryManager` determines which files need processing. It identifies a base commit for comparison: the `DIFF_FROM_COMMIT` environment variable (if set), otherwise the `lastProcessedCommit` from the loaded state (if `DIFF_ONLY=true`), otherwise it prepares for a full scan. If using a specific commit, it ensures the commit exists locally (fetching full history if needed) and then performs a `git diff` from that base commit to `HEAD`. If performing a full scan, it uses `git ls-files`. It outputs sets of `filesToProcess` and `filesToDeletePointsFor`.
+5.  **Identify Points for Deletion:** The `StateManager` uses the loaded state and the `filesToDeletePointsFor` set (determined in the previous step based on diff results or full scan logic) to compile a list of specific Qdrant point IDs that correspond to outdated file versions or deleted files.
 6.  **Delete Outdated Points:** The `QdrantManager` sends a request to Qdrant to delete the points identified in the previous step. This cleanup happens before adding new data.
 7.  **Filter & Load Files:** The `FileProcessor` takes the `filesToProcess` set, filters out non-text files (binaries, lock files), reads the content of valid text files, and determines the appropriate chunking strategy (`code`, `html`, etc.) for each.
 8.  **Analyze & Chunk Files:** The `Chunker` processes the valid files concurrently. For each file, it uses the `AnalysisService` to get LLM-generated metadata and then chunks the content using the appropriate strategy (`@mastra/rag`), embedding the analysis results into the chunk metadata. Configured delays (`SUMMARY_API_DELAY_MS`) are applied between analysis calls. It then combines these newly generated chunks with any `pendingChunks` loaded from the previous state.
@@ -165,6 +169,10 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
     # Set to true to only process files changed since the last run (based on state)
     # Set to false or omit to process all tracked files on every run.
     DIFF_ONLY=true
+    # Optional: Specify a commit hash to diff against, overriding DIFF_ONLY and the state file's last commit.
+    # If set, the pipeline will attempt to fetch full history if the commit isn't local.
+    # The run will FAIL if the commit is invalid or cannot be found after fetching.
+    # DIFF_FROM_COMMIT=your_commit_hash_here
 
     # --- Embedding Model Configuration (OpenAI-Compatible) ---
     EMBEDDING_PROVIDER_NAME=openai # Or 'lmstudio', 'ollama', etc.

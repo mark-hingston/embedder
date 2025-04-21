@@ -15,6 +15,8 @@ export interface EmbeddingPipelineOptions {
     baseDir: string;
     /** If true, only process files changed since the last run (based on state file). */
     diffOnly: boolean;
+    /** Optional commit hash to diff against, overriding diffOnly and state file's last commit. */
+    diffFromCommit?: string;
     /** Maximum number of files to chunk concurrently. */
     maxConcurrentChunking: number;
 

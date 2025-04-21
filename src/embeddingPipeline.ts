@@ -27,9 +27,21 @@ export class EmbeddingPipeline {
             // 1. Load the previous processing state (last commit, processed files/points)
             const previousState = await this.options.stateManager.loadState();
 
-            // 2. Determine which files need processing based on Git changes (diff or full scan)
+            // 2. Determine the base commit for diffing, if applicable
+            let diffBaseCommit: string | undefined = undefined;
+            if (this.options.diffFromCommit) {
+                console.log(`Using provided commit ${this.options.diffFromCommit} as diff base.`);
+                diffBaseCommit = this.options.diffFromCommit;
+            } else if (this.options.diffOnly && previousState.lastProcessedCommit) {
+                console.log(`Using last processed commit ${previousState.lastProcessedCommit} from state as diff base.`);
+                diffBaseCommit = previousState.lastProcessedCommit;
+            } else {
+                console.log("No valid diff base commit provided or found in state; performing full scan.");
+            }
+
+            // 2b. Determine which files need processing based on Git changes (diff or full scan)
             const { filesToProcess, filesToDeletePointsFor } = await this.options.repositoryManager.listFiles(
-                this.options.diffOnly,
+                diffBaseCommit, // Pass the determined base commit (or undefined)
                 previousState
             );
 

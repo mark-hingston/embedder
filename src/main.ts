@@ -76,6 +76,12 @@ async function main() {
     const embeddingApiDelayMs = parseInt(process.env.EMBEDDING_API_DELAY_MS ?? "1000");
     const summaryApiDelayMs = parseInt(process.env.SUMMARY_API_DELAY_MS ?? "1000");
     const qdrantPort = parseInt(process.env.QDRANT_PORT ?? "6333");
+    const diffFromCommit = process.env.DIFF_FROM_COMMIT; // Read the new optional variable
+
+    // Basic validation for commit hash format (optional, logs warning)
+    if (diffFromCommit && !/^[a-f0-9]{7,40}$/i.test(diffFromCommit)) {
+        console.warn(`WARNING: DIFF_FROM_COMMIT value "${diffFromCommit}" does not look like a valid commit hash. Proceeding, but git operations might fail.`);
+    }
 
     // Load State Manager Config based on type
     let stateManager: StateManager;
@@ -160,6 +166,7 @@ async function main() {
     const pipelineOptions: EmbeddingPipelineOptions = {
         baseDir,
         diffOnly,
+        diffFromCommit, // Pass the new option
         maxConcurrentChunking,
         repositoryManager,
         fileProcessor,

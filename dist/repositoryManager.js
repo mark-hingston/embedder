@@ -32,32 +32,53 @@ export class RepositoryManager {
     }
     /**
      * Lists files to be processed and files whose points should be deleted.
-     * If `diffOnly` is true and a previous commit exists in the state, it uses `git diff`.
-     * Otherwise, or if the diff fails, it falls back to `git ls-files` (full scan).
-     * @param diffOnly Flag indicating whether to perform a diff or a full scan.
-     * @param previousState The state from the previous run, containing the last processed commit.
+     * If `diffBaseCommit` is provided, it attempts a `git diff` from that commit to HEAD.
+     * It tries to fetch full history (`--depth=0`) if the commit isn't found locally.
+     * If `diffBaseCommit` is undefined, it falls back to `git ls-files` (full scan).
+     * @param diffBaseCommit The commit hash to diff from, or undefined for a full scan.
+     * @param previousState The state from the previous run, containing the last processed commit and file mappings.
      * @returns A promise resolving to a FileChanges object.
+     * @throws Error if `diffBaseCommit` is provided but invalid/not found after fetching.
      */
-    async listFiles(diffOnly, previousState) {
+    async listFiles(diffBaseCommit, previousState) {
         console.log(`Listing files in ${this.baseDir}...`);
         const filesToProcess = new Set();
         const filesToDeletePointsFor = new Set();
-        // Determine if we can use git diff (requires diffOnly flag and a previous commit hash)
-        let useDiff = diffOnly && !!previousState.lastProcessedCommit;
-        let diffFailed = false;
+        let useDiff = !!diffBaseCommit; // Use diff if a base commit is provided
         if (useDiff) {
-            const lastCommit = previousState.lastProcessedCommit;
-            console.log(`Attempting to process diff between ${lastCommit} and HEAD...`);
+            const baseCommit = diffBaseCommit;
+            console.log(`Attempting to process diff between ${baseCommit} and HEAD...`);
             try {
-                // Get diff summary (status + paths) between last processed commit and current HEAD
+                // 1. Check if the base commit exists locally
+                try {
+                    await this.repo.raw(['cat-file', '-e', `${baseCommit}^{commit}`]);
+                    console.log(`Commit ${baseCommit} found locally.`);
+                }
+                catch (checkError) {
+                    // 2. If not local, attempt to fetch full history
+                    console.warn(`Commit ${baseCommit} not found locally. Attempting to fetch full history (git fetch --depth=0)...`);
+                    try {
+                        await this.repo.fetch(['--depth=0']);
+                        console.log("Fetch complete. Retrying commit check...");
+                        // Re-check after fetch
+                        await this.repo.raw(['cat-file', '-e', `${baseCommit}^{commit}`]);
+                        console.log(`Commit ${baseCommit} found after fetch.`);
+                    }
+                    catch (fetchOrRecheckError) {
+                        console.error(`Failed to fetch or find commit ${baseCommit} after fetch.`, fetchOrRecheckError);
+                        throw new Error(`Provided DIFF_FROM_COMMIT hash "${baseCommit}" is invalid or could not be found in the repository history even after fetching.`);
+                    }
+                }
+                // 3. Perform the diff
+                console.log(`Performing diff: ${baseCommit}..HEAD`);
                 const diffOutput = await this.repo.diff([
                     "--name-status", // Output format: <status>\t<file1>[\t<file2>]
-                    lastCommit,
+                    baseCommit,
                     "HEAD",
                 ]);
                 const diffSummary = diffOutput.split('\n').filter(line => line.trim() !== '');
-                console.log(`Found ${diffSummary.length} changes between ${lastCommit} and HEAD.`);
-                // Process each line of the diff output
+                console.log(`Found ${diffSummary.length} changes between ${baseCommit} and HEAD.`);
+                // 4. Process the diff output
                 for (const line of diffSummary) {
                     const parts = line.split('\t');
                     const status = parts[0].trim(); // e.g., 'A', 'M', 'D', 'R100', 'C050'
@@ -92,16 +113,17 @@ export class RepositoryManager {
                     }
                 }
             }
-            catch (error) {
-                // Handle cases where diff fails (e.g., initial commit, invalid lastCommit hash)
-                console.warn(`Could not get diff from ${lastCommit}. Falling back to listing all tracked files. Error: ${error}`);
-                diffFailed = true;
-                useDiff = false; // Force full scan on failure
+            catch (diffError) {
+                // This catch block now specifically handles failures *during the diff command itself*,
+                // after the commit has been verified or fetched.
+                console.error(`Error performing diff between ${baseCommit} and HEAD:`, diffError);
+                // According to the plan, we should error out if the diff fails after verifying the commit
+                throw new Error(`Failed to perform git diff between verified commit "${baseCommit}" and HEAD.`);
             }
         }
-        // Fallback: If not using diff, or if diff failed, list all currently tracked files
-        if (!useDiff || diffFailed) {
-            console.log("Processing all tracked files (diffOnly=false or diff fallback)...");
+        else {
+            // Full Scan Logic (if diffBaseCommit was undefined)
+            console.log("Processing all tracked files (full scan)...");
             // Get all files currently tracked by Git
             const gitFiles = (await this.repo.raw(["ls-files"])).split("\n").filter(Boolean);
             console.log(`Found ${gitFiles.length} files via ls-files.`);
@@ -109,14 +131,16 @@ export class RepositoryManager {
             // Mark all currently tracked files for potential processing
             gitFiles.forEach(file => filesToProcess.add(file));
             // Identify files that were in the previous state but are *not* currently tracked (i.e., deleted)
+            // Also, in a full scan, mark all *existing* files from the previous state for point deletion,
+            // as they will be re-processed.
             const previouslyKnownFiles = Object.keys(previousState.files);
             previouslyKnownFiles.forEach(knownFile => {
                 if (!currentFilesSet.has(knownFile)) {
+                    // File was deleted since last state save
                     filesToDeletePointsFor.add(knownFile);
                 }
-                else if (!diffOnly) {
-                    // If doing a full scan (not diffOnly), existing files also need their old points deleted
-                    // before potentially being re-processed and getting new points.
+                else {
+                    // File still exists, but in a full scan, its old points need deletion before re-processing
                     filesToDeletePointsFor.add(knownFile);
                 }
             });
