@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { retry } from "./retry.js";
+import { RateLimiter } from "./rateLimiter.js"; // Updated import path and name
 import { CodeFileAnalysisSchema } from "./codeFileAnalysisSchema.js";
 const CACHE_DIR = '.analysis_cache';
 /**
@@ -13,8 +14,10 @@ const CACHE_DIR = '.analysis_cache';
  */
 export class AnalysisService {
     llm;
+    rateLimiter; // Updated type
     constructor(llm) {
         this.llm = llm;
+        this.rateLimiter = new RateLimiter(); // Initialize renamed rate limiter
     }
     /**
      * Analyzes the content of a code file using the configured LLM.
@@ -60,10 +63,14 @@ export class AnalysisService {
         console.log(`Requesting LLM analysis for: ${filePath}${progressInfo}`);
         const fileExtension = filePath.split('.').pop()?.toLowerCase();
         try {
+            // Explicitly type the retry call
             const result = await retry(async () => {
+                // --- Rate Limiter Check ---
+                await this.rateLimiter.waitForPermit();
+                // ------------------------
                 // Prompt designed to guide the LLM in extracting structured information from code.
                 const prompt = `
-Analyse the following source code file.
+ Analyse the following source code file.
 File Path: ${filePath}
 
 **Instructions:**
@@ -119,12 +126,55 @@ ${content}
                 // --- Cache Write Logic End ---
                 return validatedObject; // Return the Zod-validated object
             }, {
-                maxRetries: 3,
-                initialDelay: 1500, // Slightly longer delay for potentially complex LLM analysis
-                onRetry: (error, attempt) => console.warn(`LLM analysis retry ${attempt} for ${filePath}${progressInfo}: ${error.message}`)
+                maxRetries: 5, // Increased retries slightly to accommodate rate limit waits
+                initialDelay: 1500,
+                onRetry: (error, attempt) => {
+                    console.warn(`LLM analysis retry ${attempt} for ${filePath}${progressInfo}: ${error.message}`);
+                    // --- Rate Limit Error Handling ---
+                    // Placeholder: Check if the error indicates a rate limit (429)
+                    // This currently relies on parsing the message string.
+                    // TODO: Refine this check based on actual error object structure.
+                    const message = error.message || '';
+                    const status = error.status;
+                    const headers = error.response?.headers; // Attempt to access headers
+                    const isRateLimitError = status === 429 || /rate limit/i.test(message) || /exceeded token rate limit/i.test(message);
+                    if (isRateLimitError) {
+                        let retryAfterSeconds = null;
+                        // 1. Check 'Retry-After' header first (common practice)
+                        const retryAfterHeader = headers?.['retry-after'];
+                        if (retryAfterHeader && typeof retryAfterHeader === 'string') {
+                            const parsedSeconds = parseInt(retryAfterHeader, 10);
+                            if (!isNaN(parsedSeconds)) {
+                                retryAfterSeconds = parsedSeconds;
+                                console.log(`Rate limit detected for ${filePath}. Found Retry-After header: ${retryAfterSeconds} seconds.`);
+                            }
+                        }
+                        // 2. If header not found or invalid, try parsing the message
+                        if (retryAfterSeconds === null) {
+                            const retryAfterMatch = message.match(/retry after (\d+)/i);
+                            if (retryAfterMatch) {
+                                const parsedSeconds = parseInt(retryAfterMatch[1], 10);
+                                if (!isNaN(parsedSeconds)) {
+                                    retryAfterSeconds = parsedSeconds;
+                                    console.log(`Rate limit detected for ${filePath}. Parsed from message: ${retryAfterSeconds} seconds.`);
+                                }
+                            }
+                        }
+                        // 3. Notify the limiter if a valid duration was found, otherwise use a default
+                        if (retryAfterSeconds !== null && retryAfterSeconds > 0) {
+                            this.rateLimiter.notifyRateLimit(retryAfterSeconds);
+                        }
+                        else {
+                            console.warn(`Rate limit error detected for ${filePath}, but couldn't determine Retry-After duration from headers or message: "${message}". Applying default cooldown.`);
+                            this.rateLimiter.notifyRateLimit(60); // Default to 60 seconds cooldown
+                        }
+                    }
+                    // --- End Rate Limit Error Handling ---
+                }
             });
             console.log(`LLM analysis successful for: ${filePath}${progressInfo}`);
-            return result; // Note: result already contains the validatedObject which was cached
+            // Type assertion might be needed if TS still infers unknown, but explicit generic should fix it.
+            return result;
         }
         catch (error) {
             // Catch both API/retry errors, Zod validation errors, and potentially cache errors if not caught earlier
