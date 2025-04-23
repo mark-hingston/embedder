@@ -18,7 +18,8 @@ This project provides a configurable pipeline to process files within a Git repo
     *   Relevant tags (keywords, concepts, frameworks)
     *   Structural elements (imports, exports, classes, functions, interfaces)
     *   This analysis is added as metadata to the generated chunks.
-*   **Intelligent Chunking:** Employs file-type specific chunking strategies using the `@mastra/rag` library:
+    *   **Analysis Caching:** Caches successful analysis results locally (`.analysis_cache/`) based on file content hash. Avoids re-analyzing unchanged files on subsequent runs, improving performance and resilience to interruptions.
+ *   **Intelligent Chunking:** Employs file-type specific chunking strategies using the `@mastra/rag` library:
     *   Recognizes Code, HTML, JSON, Markdown, and generic Text files.
     *   Uses appropriate strategies (e.g., recursive for code, HTML-aware for HTML).
     *   Chunking parameters (size, overlap) are configurable via environment variables (defaults provided).
@@ -115,7 +116,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 5.  **Identify Points for Deletion:** The `StateManager` uses the loaded state and the `filesToDeletePointsFor` set (determined in the previous step based on diff results or full scan logic) to compile a list of specific Qdrant point IDs that correspond to outdated file versions or deleted files.
 6.  **Delete Outdated Points:** The `QdrantManager` sends a request to Qdrant to delete the points identified in the previous step. This cleanup happens before adding new data.
 7.  **Filter & Load Files:** The `FileProcessor` takes the `filesToProcess` set, filters out non-text files (binaries, lock files), reads the content of valid text files, and determines the appropriate chunking strategy (`code`, `html`, etc.) for each.
-8.  **Analyze & Chunk Files:** The `Chunker` processes the valid files concurrently. For each file, it uses the `AnalysisService` to get LLM-generated metadata and then chunks the content using the appropriate strategy (`@mastra/rag`), embedding the analysis results into the chunk metadata. Configured delays (`SUMMARY_API_DELAY_MS`) are applied between analysis calls. It then combines these newly generated chunks with any `pendingChunks` loaded from the previous state.
+8.  **Analyze & Chunk Files:** The `Chunker` processes the valid files concurrently. For each file, it uses the `AnalysisService` to get LLM-generated metadata (checking a local cache first based on file content hash) and then chunks the content using the appropriate strategy (`@mastra/rag`), embedding the analysis results into the chunk metadata. If analysis is performed (cache miss or stale), the result is cached. Configured delays (`SUMMARY_API_DELAY_MS`) are applied between analysis calls. It then combines these newly generated chunks with any `pendingChunks` loaded from the previous state.
 9.  **Save Intermediate State:** The `StateManager` saves an *intermediate state* to its configured destination. This state includes all combined chunks (pending + new) marked as `pendingChunks`, along with the current commit hash and the results of the point deletions from Step 6. This allows the pipeline to resume from this point if the subsequent embedding or upsert steps fail.
 10. **Generate Embeddings:** The `EmbeddingService` takes the combined list of text chunks, batches them, and calls the configured Embedding API (with delays `EMBEDDING_API_DELAY_MS` and retries) to generate vector embeddings for each chunk.
 11. **Upsert New Points:** The `QdrantManager` prepares Qdrant point objects (ID, vector, payload) for the new chunks and upserts them into the Qdrant collection in batches, waiting for completion.
@@ -150,7 +151,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 
     # --- Azure Blob Storage Settings (Required if STATE_MANAGER_TYPE=blob) ---
     # Connection string for your Azure Storage account (get from Azure Portal)
-    # IMPORTANT: Keep this secure, do not commit directly (use .env and add to .gitignore)
+    # IMPORTANT: Keep this secure, do not commit directly (use .env and add to .gitignore, which should also include .analysis_cache/)
     AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your_storage_account_name;AccountKey=your_storage_account_key;EndpointSuffix=core.windows.net"
     # Name of the container to store the state file in (will be created if it doesn't exist)
     AZURE_STORAGE_CONTAINER_NAME="embedding-state-container"
@@ -242,7 +243,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
 *   **`blobStateManager.ts`**: Implements `StateManager` using Azure Blob Storage.
 *   **`fileStateManager.ts`**: Implements `StateManager` using the local file system.
 *   **`fileProcessor.ts`**: Filters candidate files, reads content, determines chunking strategy.
-*   **`analysisService.ts`**: Interacts with the LLM to perform code analysis.
+*   **`analysisService.ts`**: Interacts with the LLM to perform code analysis, including caching results locally to avoid redundant API calls for unchanged files.
 *   **`codeFileAnalysisSchema.ts`**: Defines the Zod schema for the expected LLM analysis output.
 *   **`chunker.ts`**: Chunks file content using `@mastra/rag`, incorporating analysis results.
 *   **`chunkOptions.ts` / `fileTypeChunkingOptions.ts` / `chunkStrategy.ts`**: Define types and defaults for chunking configuration.
