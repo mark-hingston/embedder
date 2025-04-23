@@ -19,8 +19,9 @@ export class AnalysisService {
      * @returns A promise that resolves to the analysis results conforming to CodeFileAnalysisSchema,
      *          or an object indicating an analysis error.
      */
-    async analyseCode(content, filePath) {
-        console.log(`Requesting LLM analysis for: ${filePath}`);
+    async analyseCode(content, filePath, currentIndex, totalFiles) {
+        const progressInfo = currentIndex !== undefined && totalFiles !== undefined ? ` (File ${currentIndex} of ${totalFiles})` : '';
+        console.log(`Requesting LLM analysis for: ${filePath}${progressInfo}`);
         const fileExtension = filePath.split('.').pop()?.toLowerCase();
         try {
             const result = await retry(async () => {

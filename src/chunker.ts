@@ -59,13 +59,15 @@ export class Chunker {
      * Incorporates analysis results into chunk metadata.
      * Falls back to recursive chunking if the primary strategy fails.
      * @param file The file to process and chunk.
+     * @param currentIndex The index of the current file being processed (optional).
+     * @param totalFiles The total number of files being processed (optional).
      * @returns A promise resolving to an array of Chunks.
      */
-    async chunkFile(file: ProcessableFile): Promise<Chunk[]> {
-        // 1. Perform LLM analysis first
+    async chunkFile(file: ProcessableFile, currentIndex?: number, totalFiles?: number): Promise<Chunk[]> {
+        // 1. Perform LLM analysis first, passing progress info
         // Note: The delay is handled in chunkFiles, not here, to control rate across concurrent calls.
         const analysis: CodeFileAnalysis | { source: string, analysisError: boolean } =
-            await this.analysisService.analyseCode(file.content, file.relativePath);
+            await this.analysisService.analyseCode(file.content, file.relativePath, currentIndex, totalFiles);
 
         // Check if analysis failed and log a warning
         if ('analysisError' in analysis && analysis.analysisError) {
@@ -156,10 +158,10 @@ export class Chunker {
         const fileEntries = Array.from(processableFiles.entries());
 
         // Function to process a single file entry, including the post-processing delay
-        const processEntry = async ([relativePath, file]: [string, ProcessableFile]): Promise<void> => {
+        const processEntry = async ([relativePath, file]: [string, ProcessableFile], index: number): Promise<void> => {
             try {
-                // Perform the analysis and chunking for this file
-                const chunks = await this.chunkFile(file);
+                // Perform the analysis and chunking for this file, passing progress info
+                const chunks = await this.chunkFile(file, index + 1, fileEntries.length); // Pass index+1 (1-based) and total
                 if (chunks.length > 0) {
                     fileChunksMap.set(relativePath, chunks);
                 }
@@ -178,7 +180,8 @@ export class Chunker {
 
         // Use p-limit to control the concurrency of processEntry calls
         const limit = pLimit(maxConcurrency);
-        const promises = fileEntries.map(entry => limit(() => processEntry(entry)));
+        // Pass the index along with the entry to processEntry
+        const promises = fileEntries.map((entry, index) => limit(() => processEntry(entry, index)));
 
         await Promise.all(promises); // Wait for all concurrent operations (including delays) to complete
 
