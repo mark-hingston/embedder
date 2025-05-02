@@ -1,4 +1,4 @@
-import { stat, readFile } from "fs/promises";
+import { open, stat } from "fs/promises";
 // Dynamically import istextorbinary as it's likely an ESM module
 const { isText } = await import("istextorbinary");
 
@@ -24,6 +24,9 @@ export const isJson = (fileName: string): boolean => /(?<!c)\.json$/i.test(fileN
 /** Checks if a filename has a Markdown extension. */
 export const isMarkdown = (fileName: string): boolean => /\.mdx?$/i.test(fileName);
 
+/** Checks if a filename has a common image file extension. */
+export const isImageFile = (fileName: string): boolean =>
+  /\.(?:svg|png|jpe?g|gif|webp|bmp|ico|tiff?|avif)$/i.test(fileName);
 
 // --- Filesystem Utilities ---
 
@@ -55,15 +58,21 @@ export const fsExists = async (filePath: string): Promise<boolean> => {
  * @returns True if the file is determined to be text, false otherwise (including read errors).
  */
 export const isTextFile = async (filePath: string): Promise<boolean> => {
-    try {
-        // Reading the buffer first can be more reliable for isText
-        const fileBuffer = await readFile(filePath);
-        // isText can accept buffer or path; buffer avoids a second read if path is used.
-        // Explicit cast to boolean as the library's types might be slightly off.
-        return isText(filePath, fileBuffer) as boolean;
-    } catch (error) {
-        // Treat files that cannot be read as non-text for safety
-        console.warn(`Warning: Could not read file ${filePath} to check if text: ${error instanceof Error ? error.message : error}`);
-        return false;
-    }
+  try {
+      // Reading the buffer first can be more reliable for isText
+      // Limit buffer size to avoid reading huge files just for text check
+      const fileHandle = await open(filePath, 'r');
+      const buffer = Buffer.alloc(512); // Read up to 512 bytes
+      await fileHandle.read(buffer, 0, 512, 0);
+      await fileHandle.close();
+
+      // isText can accept buffer or path; buffer avoids a second read if path is used.
+      // Explicit cast to boolean as the library's types might be slightly off.
+      // Pass null instead of the full path when providing a buffer
+      return isText(null, buffer) as boolean;
+  } catch (error) {
+      // Treat files that cannot be read as non-text for safety
+      console.warn(`Warning: Could not read file ${filePath} to check if text: ${error instanceof Error ? error.message : error}`);
+      return false;
+  }
 };

@@ -1,6 +1,6 @@
 import { join } from "path";
 import { readFile } from "node:fs/promises";
-import { fsExists, isCode, isHtml, isJson, isLockFile, isMarkdown, isTextFile } from "./utilities.js";
+import { fsExists, isCode, isHtml, isJson, isLockFile, isMarkdown, isTextFile, isImageFile } from "./utilities.js";
 import { ChunkStrategy } from "./chunkStrategy.js";
 
 /**
@@ -39,6 +39,7 @@ export class FileProcessor {
         let skippedLockState = 0;
         let skippedMissing = 0;
         let skippedReadError = 0;
+        let skippedImage = 0;
 
         for (const relativePath of files) {
             const filePath = join(this.baseDir, relativePath);
@@ -55,19 +56,26 @@ export class FileProcessor {
                     continue;
                 }
 
-                // 3. Check if it's likely a text file (skip binaries)
+                // 3. Skip common image files by extension
+                if (isImageFile(relativePath)) {
+                    skippedImage++;
+                    continue;
+                }
+
+                // 4. Check if it's likely a text file (skip remaining binaries)
+                // This check is still useful for non-image binaries missed by extension
                 if (!(await isTextFile(filePath))) {
                     skippedBinary++;
                     continue;
                 }
 
-                // 4. Read content (assuming UTF-8)
+                // 5. Read content (assuming UTF-8)
                 const content = await readFile(filePath, { encoding: "utf8" });
 
-                // 5. Determine chunking strategy based on file extension/type
-                const strategy = this.determineStrategy(filePath);
+                // 6. Determine chunking strategy based on file extension/type
+                const strategy = this.determineStrategy(filePath); // Use filePath or relativePath consistently
 
-                // 6. Add to map of processable files
+                // 7. Add to map of processable files
                 processableFiles.set(relativePath, {
                     filePath,
                     relativePath,
@@ -77,11 +85,11 @@ export class FileProcessor {
 
             } catch (readError) {
                 // Catch errors during fs operations or reading
-                console.error(`Error reading or checking file ${relativePath}: ${readError}. Skipping.`);
+                console.error(`Error processing file ${relativePath}: ${readError instanceof Error ? readError.message : readError}. Skipping.`);
                 skippedReadError++;
             }
         }
-        console.log(`Filtering complete: ${processableFiles.size} files loaded. Skipped: ${skippedMissing} (missing), ${skippedLockState} (lock/state), ${skippedBinary} (binary), ${skippedReadError} (read error).`);
+        console.log(`Filtering complete: ${processableFiles.size} files loaded. Skipped: ${skippedMissing} (missing), ${skippedLockState} (lock/state), ${skippedImage} (image), ${skippedBinary} (other binary), ${skippedReadError} (read error).`);
         return processableFiles;
     }
 
@@ -91,10 +99,14 @@ export class FileProcessor {
      * @returns The determined ChunkStrategy.
      */
     private determineStrategy(filePath: string): ChunkStrategy {
+         // It's generally better to check based on the relative path if possible,
+         // as it's less likely to contain irrelevant directory names.
+         // However, using filePath is fine if baseDir structure is consistent.
         if (isCode(filePath)) return "code";
         if (isHtml(filePath)) return "html";
         if (isJson(filePath)) return "json";
         if (isMarkdown(filePath)) return "markdown";
+        // Add other specific text types here if needed (e.g., XML, CSV)
         return "text"; // Default strategy for unrecognized text files
     }
 }

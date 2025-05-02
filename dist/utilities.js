@@ -1,4 +1,4 @@
-import { stat, readFile } from "fs/promises";
+import { open, stat } from "fs/promises";
 // Dynamically import istextorbinary as it's likely an ESM module
 const { isText } = await import("istextorbinary");
 // --- File Type Checks ---
@@ -15,6 +15,8 @@ export const isHtml = (fileName) => /\.html?$/i.test(fileName);
 export const isJson = (fileName) => /(?<!c)\.json$/i.test(fileName); // Use negative lookbehind to exclude .jsonc
 /** Checks if a filename has a Markdown extension. */
 export const isMarkdown = (fileName) => /\.mdx?$/i.test(fileName);
+/** Checks if a filename has a common image file extension. */
+export const isImageFile = (fileName) => /\.(?:svg|png|jpe?g|gif|webp|bmp|ico|tiff?|avif)$/i.test(fileName);
 // --- Filesystem Utilities ---
 /**
  * Checks if a file or directory exists at the given path.
@@ -46,10 +48,15 @@ export const fsExists = async (filePath) => {
 export const isTextFile = async (filePath) => {
     try {
         // Reading the buffer first can be more reliable for isText
-        const fileBuffer = await readFile(filePath);
+        // Limit buffer size to avoid reading huge files just for text check
+        const fileHandle = await open(filePath, 'r');
+        const buffer = Buffer.alloc(512); // Read up to 512 bytes
+        await fileHandle.read(buffer, 0, 512, 0);
+        await fileHandle.close();
         // isText can accept buffer or path; buffer avoids a second read if path is used.
         // Explicit cast to boolean as the library's types might be slightly off.
-        return isText(filePath, fileBuffer);
+        // Pass null instead of the full path when providing a buffer
+        return isText(null, buffer);
     }
     catch (error) {
         // Treat files that cannot be read as non-text for safety
