@@ -131,42 +131,53 @@ ${content}
                 onRetry: (error, attempt) => {
                     console.warn(`LLM analysis retry ${attempt} for ${filePath}${progressInfo}: ${error.message}`);
                     // --- Rate Limit Error Handling ---
-                    // Placeholder: Check if the error indicates a rate limit (429)
-                    // This currently relies on parsing the message string.
-                    // TODO: Refine this check based on actual error object structure.
+                    // Attempt to detect rate limits more robustly.
+                    // Prioritize structured error info if available (common in HTTP clients).
+                    const response = error?.response;
+                    const status = response?.status;
+                    const headers = response?.headers;
                     const message = error.message || '';
-                    const status = error.status;
-                    const headers = error.response?.headers; // Attempt to access headers
-                    const isRateLimitError = status === 429 || /rate limit/i.test(message) || /exceeded token rate limit/i.test(message);
-                    if (isRateLimitError) {
-                        let retryAfterSeconds = null;
-                        // 1. Check 'Retry-After' header first (common practice)
+                    let retryAfterSeconds = null;
+                    let detectedVia = null; // Track detection method
+                    // 1. Check standard HTTP 429 status and Retry-After header
+                    if (status === 429) {
                         const retryAfterHeader = headers?.['retry-after'];
                         if (retryAfterHeader && typeof retryAfterHeader === 'string') {
                             const parsedSeconds = parseInt(retryAfterHeader, 10);
                             if (!isNaN(parsedSeconds)) {
                                 retryAfterSeconds = parsedSeconds;
-                                console.log(`Rate limit detected for ${filePath}. Found Retry-After header: ${retryAfterSeconds} seconds.`);
+                                detectedVia = 'HTTP Header';
                             }
                         }
-                        // 2. If header not found or invalid, try parsing the message
-                        if (retryAfterSeconds === null) {
-                            const retryAfterMatch = message.match(/retry after (\d+)/i);
-                            if (retryAfterMatch) {
-                                const parsedSeconds = parseInt(retryAfterMatch[1], 10);
-                                if (!isNaN(parsedSeconds)) {
-                                    retryAfterSeconds = parsedSeconds;
-                                    console.log(`Rate limit detected for ${filePath}. Parsed from message: ${retryAfterSeconds} seconds.`);
-                                }
+                        // If status is 429 but header is missing/invalid, we still know it's a rate limit
+                        if (!detectedVia) {
+                            detectedVia = 'HTTP Status 429';
+                        }
+                    }
+                    // 2. Fallback: Check error message if structured info wasn't conclusive
+                    if (!detectedVia && (/rate limit/i.test(message) || /exceeded token rate limit/i.test(message))) {
+                        detectedVia = 'Error Message Regex';
+                        // Try parsing retry duration from message as a last resort
+                        const retryAfterMatch = message.match(/retry after (\d+)/i);
+                        if (retryAfterMatch) {
+                            const parsedSeconds = parseInt(retryAfterMatch[1], 10);
+                            if (!isNaN(parsedSeconds)) {
+                                retryAfterSeconds = parsedSeconds;
+                                detectedVia = 'Error Message Regex (Parsed Duration)';
                             }
                         }
-                        // 3. Notify the limiter if a valid duration was found, otherwise use a default
+                    }
+                    // 3. If a rate limit was detected (by any means), notify the limiter
+                    if (detectedVia) {
                         if (retryAfterSeconds !== null && retryAfterSeconds > 0) {
+                            console.log(`Rate limit detected for ${filePath} via ${detectedVia}. Waiting ${retryAfterSeconds} seconds.`);
                             this.rateLimiter.notifyRateLimit(retryAfterSeconds);
                         }
                         else {
-                            console.warn(`Rate limit error detected for ${filePath}, but couldn't determine Retry-After duration from headers or message: "${message}". Applying default cooldown.`);
-                            this.rateLimiter.notifyRateLimit(60); // Default to 60 seconds cooldown
+                            // Detected rate limit but couldn't get a specific duration
+                            const defaultCooldown = 60;
+                            console.warn(`Rate limit detected for ${filePath} via ${detectedVia}, but couldn't determine Retry-After duration. Applying default cooldown: ${defaultCooldown} seconds.`);
+                            this.rateLimiter.notifyRateLimit(defaultCooldown);
                         }
                     }
                     // --- End Rate Limit Error Handling ---

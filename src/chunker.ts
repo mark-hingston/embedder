@@ -4,9 +4,6 @@ import { ChunkingOptions } from "./chunkOptions.js";
 import { FileTypeChunkingOptions, DEFAULT_CHUNKING_OPTIONS } from "./fileTypeChunkingOptions.js";
 import { ProcessableFile } from "./fileProcessor.js";
 import { ChunkStrategy } from "./chunkStrategy.js";
-// Note: Importing ChunkOptions directly from @mastra/rag might be preferable if the type definition is exported.
-// This path might be specific to the build output of @mastra/rag.
-import { ChunkOptions } from "node_modules/@mastra/rag/dist/_tsup-dts-rollup.js";
 import pLimit from 'p-limit'; // Used for limiting concurrency during file chunking
 import { AnalysisService } from "./analysisService.js";
 import { CodeFileAnalysis } from "./codeFileAnalysisSchema.js";
@@ -22,7 +19,7 @@ export class Chunker {
     private chunkingOptions: FileTypeChunkingOptions;
     private defaultChunkSize: number;
     private defaultChunkOverlap: number;
-    private analysisApiDelayMs: number; // <-- Add this property
+    private analysisApiDelayMs: number;
 
     /**
      * Creates an instance of the Chunker.
@@ -34,13 +31,13 @@ export class Chunker {
      */
     constructor(
         analysisService: AnalysisService,
-        analysisApiDelayMs: number = 0, // <-- Add parameter with default
+        analysisApiDelayMs: number = 0,
         options?: Partial<FileTypeChunkingOptions>,
         defaultSize: number = 512,
         defaultOverlap: number = 50
     ) {
         this.analysisService = analysisService;
-        this.analysisApiDelayMs = analysisApiDelayMs; // <-- Store the delay
+        this.analysisApiDelayMs = analysisApiDelayMs;
         const userChunkingOptions = options ?? {};
         // Merge default and user-provided chunking options
         this.chunkingOptions = {
@@ -84,17 +81,25 @@ export class Chunker {
         try {
             // 3. Attempt chunking with the file-type specific strategy
             const options = this.getChunkingOptions(file.strategy);
-            chunks = await doc.chunk(this.mapToChunkOptions(options));
+            // Construct an object literal matching the expected ChunkParams structure
+            // Cast strategy to 'any' to bypass the strict nominal type check
+            chunks = await doc.chunk({
+                strategy: options.strategy as any, // Cast to any
+                size: options.size,
+                overlap: options.overlap,
+                separator: options.separator,
+                // Removed headers/sections spreading as they don't exist on ChunkingOptions
+            });
         } catch (error) {
             console.warn(`Error chunking ${file.relativePath} with strategy '${file.strategy}': ${error}. Falling back to basic recursive.`);
             try {
                 // 4. Fallback to recursive chunking if the primary strategy fails
-                const fallbackOptions = {
+                // Construct a plain object literal for the fallback
+                chunks = await doc.chunk({
                     strategy: "recursive",
                     size: this.defaultChunkSize,
                     overlap: this.defaultChunkOverlap
-                } as ChunkOptions;
-                chunks = await doc.chunk(fallbackOptions);
+                });
             } catch (fallbackError) {
                 console.error(`Fallback chunking strategy also failed for ${file.relativePath}: ${fallbackError}. Skipping file.`);
                 return []; // Return empty array if all chunking fails
@@ -126,19 +131,6 @@ export class Chunker {
             case "markdown": return this.chunkingOptions.markdown;
             default: return this.chunkingOptions.text;
         }
-    }
-
-    /**
-     * Maps internal ChunkingOptions to the ChunkOptions expected by @mastra/rag.
-     */
-    private mapToChunkOptions(options: ChunkingOptions): ChunkOptions {
-        return {
-            strategy: options.strategy,
-            size: options.size,
-            overlap: options.overlap,
-            separator: options.separator,
-            maxSize: options.maxSize
-        } as ChunkOptions;
     }
 
     /**

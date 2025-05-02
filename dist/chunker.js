@@ -12,7 +12,7 @@ export class Chunker {
     chunkingOptions;
     defaultChunkSize;
     defaultChunkOverlap;
-    analysisApiDelayMs; // <-- Add this property
+    analysisApiDelayMs;
     /**
      * Creates an instance of the Chunker.
      * @param analysisService Service to perform LLM analysis on code files.
@@ -21,10 +21,9 @@ export class Chunker {
      * @param defaultSize Default chunk size for fallback recursive chunking.
      * @param defaultOverlap Default chunk overlap for fallback recursive chunking.
      */
-    constructor(analysisService, analysisApiDelayMs = 0, // <-- Add parameter with default
-    options, defaultSize = 512, defaultOverlap = 50) {
+    constructor(analysisService, analysisApiDelayMs = 0, options, defaultSize = 512, defaultOverlap = 50) {
         this.analysisService = analysisService;
-        this.analysisApiDelayMs = analysisApiDelayMs; // <-- Store the delay
+        this.analysisApiDelayMs = analysisApiDelayMs;
         const userChunkingOptions = options ?? {};
         // Merge default and user-provided chunking options
         this.chunkingOptions = {
@@ -63,18 +62,26 @@ export class Chunker {
         try {
             // 3. Attempt chunking with the file-type specific strategy
             const options = this.getChunkingOptions(file.strategy);
-            chunks = await doc.chunk(this.mapToChunkOptions(options));
+            // Construct an object literal matching the expected ChunkParams structure
+            // Cast strategy to 'any' to bypass the strict nominal type check
+            chunks = await doc.chunk({
+                strategy: options.strategy, // Cast to any
+                size: options.size,
+                overlap: options.overlap,
+                separator: options.separator,
+                // Removed headers/sections spreading as they don't exist on ChunkingOptions
+            });
         }
         catch (error) {
             console.warn(`Error chunking ${file.relativePath} with strategy '${file.strategy}': ${error}. Falling back to basic recursive.`);
             try {
                 // 4. Fallback to recursive chunking if the primary strategy fails
-                const fallbackOptions = {
+                // Construct a plain object literal for the fallback
+                chunks = await doc.chunk({
                     strategy: "recursive",
                     size: this.defaultChunkSize,
                     overlap: this.defaultChunkOverlap
-                };
-                chunks = await doc.chunk(fallbackOptions);
+                });
             }
             catch (fallbackError) {
                 console.error(`Fallback chunking strategy also failed for ${file.relativePath}: ${fallbackError}. Skipping file.`);
@@ -104,18 +111,6 @@ export class Chunker {
             case "markdown": return this.chunkingOptions.markdown;
             default: return this.chunkingOptions.text;
         }
-    }
-    /**
-     * Maps internal ChunkingOptions to the ChunkOptions expected by @mastra/rag.
-     */
-    mapToChunkOptions(options) {
-        return {
-            strategy: options.strategy,
-            size: options.size,
-            overlap: options.overlap,
-            separator: options.separator,
-            maxSize: options.maxSize
-        };
     }
     /**
      * Chunks multiple files concurrently using a specified concurrency limit,

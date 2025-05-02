@@ -2,7 +2,7 @@
  * Simple rate limiter to enforce a cooldown period after a rate limit error.
  * This ensures that subsequent requests wait for the specified duration.
  */
-export class RateLimiter { // Renamed class
+export class RateLimiter {
     private coolDownUntil: number = 0; // Timestamp (ms) until which requests should pause
 
     /**
@@ -13,7 +13,7 @@ export class RateLimiter { // Renamed class
         const now = Date.now();
         if (now < this.coolDownUntil) {
             const waitTime = this.coolDownUntil - now;
-            console.log(`RateLimiter: Cooling down for ${waitTime}ms.`); // Updated log prefix
+            console.log(`RateLimiter: Cooling down for ${waitTime}ms.`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }
@@ -30,7 +30,7 @@ export class RateLimiter { // Renamed class
         // Update only if the new cooldown extends further than the current one
         if (newCoolDownUntil > this.coolDownUntil) {
             this.coolDownUntil = newCoolDownUntil;
-            console.log(`RateLimiter: Rate limit hit. Cooling down until ${new Date(this.coolDownUntil).toISOString()}.`); // Updated log prefix
+            console.log(`RateLimiter: Rate limit hit. Cooling down until ${new Date(this.coolDownUntil).toISOString()}.`);
         }
     }
 }

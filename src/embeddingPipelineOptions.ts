@@ -26,7 +26,7 @@ export interface EmbeddingPipelineOptions {
     /** Handles filtering and reading file content. */
     fileProcessor: FileProcessor;
     /** Performs LLM code analysis. */
-    analysisService: AnalysisService; // Added missing property
+    analysisService: AnalysisService;
     /** Chunks file content based on type and analysis. */
     chunker: Chunker;
     /** Generates text embeddings using an external model. */

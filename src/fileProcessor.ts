@@ -73,7 +73,7 @@ export class FileProcessor {
                 const content = await readFile(filePath, { encoding: "utf8" });
 
                 // 6. Determine chunking strategy based on file extension/type
-                const strategy = this.determineStrategy(filePath); // Use filePath or relativePath consistently
+                const strategy = this.determineStrategy(filePath);
 
                 // 7. Add to map of processable files
                 processableFiles.set(relativePath, {
