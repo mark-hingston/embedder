@@ -1,5 +1,4 @@
-// src/blobStateManager.ts
-import { BlobServiceClient, ContainerClient, BlockBlobClient, StorageSharedKeyCredential, RestError } from "@azure/storage-blob";
+import { BlobServiceClient, ContainerClient, BlockBlobClient, RestError } from "@azure/storage-blob";
 import { StateManager, FilePointsState, EMPTY_STATE } from "./stateManager.js";
 import { Chunk } from "./chunk.js";
 
@@ -79,6 +78,10 @@ export class BlobStateManager implements StateManager {
       if (!state.files) {
           state.files = {};
       }
+      // Ensure pendingChunks is present if needed, or default to empty
+      if (!state.pendingChunks) {
+        state.pendingChunks = {};
+      }
 
       return state as FilePointsState;
 
@@ -110,12 +113,18 @@ export class BlobStateManager implements StateManager {
         logMessage += `\n  - Files with successfully processed points: ${numFilesWithPoints}`;
         logMessage += `\n  - Files with pending chunks: ${numFilesWithPending}`;
     } else {
-        logMessage = `Saving state for ${numFilesWithPoints} files (Commit: ${state.lastProcessedCommit || 'N/A'}) to blob '${this.blobName}'...`; // Keep original format if no pending
+        // Keep simpler format if no pending chunks
+        logMessage = `Saving state for ${numFilesWithPoints} files (Commit: ${state.lastProcessedCommit || 'N/A'}) to blob '${this.blobName}'...`;
     }
     console.log(logMessage);
     const blobClient = this.getBlockBlobClient();
     try {
-      const stateString = JSON.stringify(state, null, 2); // Pretty-print JSON
+      // Ensure pendingChunks is defined (as empty obj) if null/undefined before stringifying
+      const stateToSave = {
+        ...state,
+        pendingChunks: state.pendingChunks ?? {}
+      };
+      const stateString = JSON.stringify(stateToSave, null, 2); // Pretty-print JSON
       const buffer = Buffer.from(stateString, "utf8");
       await blobClient.uploadData(buffer, {
           blobHTTPHeaders: { blobContentType: "application/json" }
@@ -132,49 +141,82 @@ export class BlobStateManager implements StateManager {
   getPointsForFiles(files: Set<string>, currentState: FilePointsState): string[] {
     const pointIds = new Set<string>();
     for (const file of files) {
-        if (currentState.files[file]) {
+        // Ensure currentState.files[file] exists before trying to iterate
+        if (currentState.files && currentState.files[file]) {
             currentState.files[file].forEach(id => pointIds.add(id));
         }
     }
     return Array.from(pointIds);
   }
 
+  /**
+   * Calculates the next state based on the current state, files marked for deletion,
+   * and the mapping of files to newly generated points from the current run.
+   * @param currentState The state loaded at the beginning of the run, or the intermediate state.
+   * @param filesToDeletePointsFor Set of relative file paths whose points should be removed from the state.
+   * @param newFilePoints A record mapping relative file paths to arrays of *new* Qdrant point IDs generated in this run.
+   * @param pendingChunks Chunks generated but not yet upserted. **Crucially: If `undefined`, it signifies that all pending chunks from `currentState` should be cleared (used when calculating final state after successful upsert).** If an object (even empty), it represents the new set of pending chunks (used when calculating intermediate state).
+   * @param currentCommit The current Git commit hash to store in the next state.
+   * @returns The calculated next FilePointsState.
+   */
   calculateNextState(
     currentState: FilePointsState,
     filesToDeletePointsFor: Set<string>,
     newFilePoints: Record<string, string[]>, // Points successfully upserted in this run
-    pendingChunks?: Record<string, Chunk[]>, // Chunks generated but not yet upserted
+    pendingChunks?: Record<string, Chunk[]>, // See JSDoc above for behavior
     currentCommit?: string
   ): FilePointsState {
-    const nextFilesState = { ...currentState.files };
+    // Ensure currentState has files and pendingChunks initialized if they are missing
+    const currentFiles = currentState.files ?? {};
+    const currentPending = currentState.pendingChunks ?? {};
 
+    const nextFilesState = { ...currentFiles };
+
+    // Remove entries for files whose points were deleted/updated
     for (const file of filesToDeletePointsFor) {
-        delete nextFilesState[file];
+      delete nextFilesState[file];
     }
 
+    // Add or update entries for newly processed files
+    // Overwrite is correct here, as old points were deleted earlier.
     for (const [file, points] of Object.entries(newFilePoints)) {
         nextFilesState[file] = points;
     }
 
-    // Also remove pending chunks for files whose points are being deleted/updated
-    const nextPendingChunks = { ...(currentState.pendingChunks ?? {}) };
-    for (const file of filesToDeletePointsFor) {
-        delete nextPendingChunks[file];
-    }
-    // Add any new pending chunks from this run
-    if (pendingChunks) {
-        for (const [file, chunks] of Object.entries(pendingChunks)) {
-            nextPendingChunks[file] = chunks;
+    // --- Corrected Pending Chunks Logic ---
+    let finalPendingChunks: Record<string, Chunk[]> | undefined = undefined;
+
+    // Case 1: Calculating INTERMEDIATE state (pendingChunks argument is provided)
+    if (pendingChunks !== undefined) {
+        // Start with pending chunks from the state we are basing this on
+        const updatedPending = { ...currentPending };
+
+        // Remove pending chunks for files whose associated points in `currentState`
+        // are being deleted/updated now.
+        for (const file of filesToDeletePointsFor) {
+            delete updatedPending[file];
         }
+
+        // Add/overwrite with the *new* pending chunks passed in the argument
+        for (const [file, chunks] of Object.entries(pendingChunks)) {
+            updatedPending[file] = chunks;
+        }
+
+        // Only keep the pending field if it's not empty after updates
+        if (Object.keys(updatedPending).length > 0) {
+            finalPendingChunks = updatedPending;
+        }
+        // If updatedPending is empty, finalPendingChunks remains undefined
     }
+    // Case 2: Calculating FINAL state (pendingChunks argument is undefined)
+    // In this case, finalPendingChunks simply remains undefined, effectively clearing them.
+    // --- End Corrected Logic ---
 
 
-    const nextState: FilePointsState = {
+    return {
       files: nextFilesState,
-      pendingChunks: Object.keys(nextPendingChunks).length > 0 ? nextPendingChunks : undefined, // Store only if not empty
-      lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit
+      pendingChunks: finalPendingChunks, // Use the correctly calculated value (will be undefined for final state)
+      lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit, // Keep old commit if new one isn't provided
     };
-
-    return nextState;
   }
 }

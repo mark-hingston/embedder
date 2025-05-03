@@ -84,11 +84,11 @@ export class Chunker {
             // Construct an object literal matching the expected ChunkParams structure
             // Cast strategy to 'any' to bypass the strict nominal type check
             chunks = await doc.chunk({
-                strategy: options.strategy as any, // Cast to any
+                strategy: options.strategy as any,
                 size: options.size,
                 overlap: options.overlap,
                 separator: options.separator,
-                // Removed headers/sections spreading as they don't exist on ChunkingOptions
+                maxSize: options.maxSize
             });
         } catch (error) {
             console.warn(`Error chunking ${file.relativePath} with strategy '${file.strategy}': ${error}. Falling back to basic recursive.`);

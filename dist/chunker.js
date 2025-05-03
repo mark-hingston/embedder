@@ -65,11 +65,11 @@ export class Chunker {
             // Construct an object literal matching the expected ChunkParams structure
             // Cast strategy to 'any' to bypass the strict nominal type check
             chunks = await doc.chunk({
-                strategy: options.strategy, // Cast to any
+                strategy: options.strategy,
                 size: options.size,
                 overlap: options.overlap,
                 separator: options.separator,
-                // Removed headers/sections spreading as they don't exist on ChunkingOptions
+                maxSize: options.maxSize
             });
         }
         catch (error) {
