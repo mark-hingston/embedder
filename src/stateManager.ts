@@ -1,3 +1,4 @@
+import { Vocabulary } from "./vocabularyBuilder.js";
 /**
  * Defines the structure of the state persisted between runs.
  */
@@ -27,6 +28,17 @@ export interface StateManager {
    * Saves the provided state to the persistent store.
    * @param state The FilePointsState object to save.
    */
+/**
+   * Loads the vocabulary from the persistent store.
+   * @returns A promise resolving to the loaded Vocabulary object or undefined if not found.
+   */
+  loadVocabulary(): Promise<Vocabulary | undefined>;
+
+  /**
+   * Saves the provided vocabulary to the persistent store.
+   * @param vocabulary The Vocabulary object to save.
+   */
+  saveVocabulary(vocabulary: Vocabulary): Promise<void>;
   saveState(state: FilePointsState): Promise<void>;
 
  /**

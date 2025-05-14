@@ -1,6 +1,7 @@
 import { join } from "path";
 import { readFile } from "node:fs/promises";
 import { fsExists, isCode, isHtml, isJson, isLockFile, isMarkdown, isTextFile, isImageFile } from "./utilities.js";
+import * as crypto from 'crypto'; // Import crypto module for hashing
 /**
  * Filters a list of candidate file paths, loads the content of valid text files,
  * and determines the appropriate chunking strategy for each.
@@ -89,5 +90,14 @@ export class FileProcessor {
             return "markdown";
         // Add other specific text types here if needed (e.g., XML, CSV)
         return "text"; // Default strategy for unrecognized text files
+    }
+    /**
+     * Generates a deterministic SHA-256 hash for a given string input.
+     * Useful for creating stable IDs based on file paths or content.
+     * @param input The string to hash.
+     * @returns The SHA-256 hash as a hexadecimal string.
+     */
+    generateHash(input) {
+        return crypto.createHash('sha256').update(input).digest('hex');
     }
 }

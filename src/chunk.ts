@@ -6,5 +6,5 @@ export interface Chunk {
   /** The text content of the chunk. */
   text: string;
   /** Arbitrary metadata associated with the chunk (e.g., source file, analysis results). */
-  metadata: Record<string, any>;
+  metadata: { sparseVector?: { indices: number[]; values: number[]; }; [key: string]: any; };
 }

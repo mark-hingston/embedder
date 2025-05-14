@@ -82,28 +82,37 @@ export class QdrantManager {
         await retry(async () => {
             // 1. Create the collection with vector parameters
             await this.qdrantClient.createCollection(this.collectionName, {
-                vectors: { size: this.vectorDimensions, distance: this.distanceMetric },
+                vectors: { size: this.vectorDimensions, distance: this.distanceMetric }, // Dense vectors
+                sparse_vectors: {
+                    'keyword_sparse': {
+                        index: {
+                            type: 'sparse_hnsw', // or 'full_scan_sparse'
+                            m: 16,
+                            ef_construct: 100,
+                        }
+                    }
+                }
                 // Add other collection-level config here if needed (sharding, replication, etc.)
             });
             console.log(`Collection '${this.collectionName}' created.`);
             // 2. Create payload indices for filterable fields *after* collection creation
-            console.log(`Creating payload indices for 'source', 'tags', and 'analysisError'...`);
+            console.log(`Creating payload indices for 'source', 'documentType', and 'summary'...`);
             // Index 'source' (file path) as keyword for exact matching
             await this.qdrantClient.createPayloadIndex(this.collectionName, {
                 field_name: "source",
                 field_schema: "keyword",
                 wait: true,
             });
-            // Index 'tags' (array of strings) as keyword for filtering by tag
+            // Index 'documentType' (string) as keyword for filtering by document type ('file_summary' or 'chunk_detail')
             await this.qdrantClient.createPayloadIndex(this.collectionName, {
-                field_name: "tags",
+                field_name: "documentType",
                 field_schema: "keyword",
                 wait: true,
             });
-            // Index 'analysisError' (boolean) for filtering chunks from files that failed analysis
+            // Index 'summary' (string) for searching within the file summary
             await this.qdrantClient.createPayloadIndex(this.collectionName, {
-                field_name: "analysisError",
-                field_schema: "bool",
+                field_name: "summary", // Changed from "analysisSummary" to "summary"
+                field_schema: "text",
                 wait: true,
             });
             console.log(`Payload indices created successfully for collection '${this.collectionName}'.`);
@@ -171,8 +180,24 @@ export class QdrantManager {
                 if (batch.length > 0) {
                     console.log(`Upserting batch ${batchNumber}/${totalBatches} (${batch.length} points)...`);
                     await retry(async () => {
+                        // Prepare points for upsertion, including sparse vectors if they exist
+                        // Prepare points for upsertion, including sparse vectors if they exist
+                        const pointsToUpsert = batch.map(point => {
+                            const qdrantPoint = {
+                                id: point.id,
+                                vector: point.vector,
+                                payload: point.payload,
+                            };
+                            // Check if sparseVector exists in the payload (which is the chunk metadata)
+                            if (point.payload && point.payload.sparseVector) {
+                                qdrantPoint.sparse_vectors = {
+                                    'keyword_sparse': point.payload.sparseVector // Name must match collection config
+                                };
+                            }
+                            return qdrantPoint;
+                        });
                         const result = await this.qdrantClient.upsert(this.collectionName, {
-                            points: batch,
+                            points: pointsToUpsert, // Use the prepared points array
                             wait: true, // Wait for consistency before updating state file
                         });
                         if (result.status !== 'completed') {

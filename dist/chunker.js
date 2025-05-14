@@ -1,6 +1,7 @@
 import { MDocument } from "@mastra/rag";
 import { DEFAULT_CHUNKING_OPTIONS } from "./fileTypeChunkingOptions.js";
 import pLimit from 'p-limit'; // Used for limiting concurrency during file chunking
+import { tokenizeCode } from "./codeTokenizer.js";
 /**
  * Handles the chunking of file content based on file type and analysis results.
  * It uses the `@mastra/rag` library for the underlying chunking logic
@@ -8,11 +9,13 @@ import pLimit from 'p-limit'; // Used for limiting concurrency during file chunk
  * Includes optional delay between analysis calls when processing multiple files.
  */
 export class Chunker {
+    skipAnalysis;
     analysisService;
     chunkingOptions;
     defaultChunkSize;
     defaultChunkOverlap;
     analysisApiDelayMs;
+    vocabulary; // Made public to be set by EmbeddingPipeline
     /**
      * Creates an instance of the Chunker.
      * @param analysisService Service to perform LLM analysis on code files.
@@ -20,10 +23,15 @@ export class Chunker {
      * @param options Optional custom chunking options per file type.
      * @param defaultSize Default chunk size for fallback recursive chunking.
      * @param defaultOverlap Default chunk overlap for fallback recursive chunking.
+     * @param vocabulary Optional pre-loaded vocabulary for sparse vector generation.
      */
-    constructor(analysisService, analysisApiDelayMs = 0, options, defaultSize = 512, defaultOverlap = 50) {
+    constructor(analysisService, analysisApiDelayMs = 0, options, defaultSize = 512, defaultOverlap = 50, vocabulary, // Added vocabulary parameter
+    skipAnalysis = false // Added optional parameter to skip analysis
+    ) {
+        this.skipAnalysis = skipAnalysis;
         this.analysisService = analysisService;
         this.analysisApiDelayMs = analysisApiDelayMs;
+        this.vocabulary = vocabulary; // Store the vocabulary
         const userChunkingOptions = options ?? {};
         // Merge default and user-provided chunking options
         this.chunkingOptions = {
@@ -35,6 +43,7 @@ export class Chunker {
         };
         this.defaultChunkSize = defaultSize;
         this.defaultChunkOverlap = defaultOverlap;
+        this.analysisApiDelayMs = analysisApiDelayMs; // Ensure this is set
     }
     /**
      * Chunks a single file after performing LLM analysis.
@@ -46,16 +55,27 @@ export class Chunker {
      * @returns A promise resolving to an array of Chunks.
      */
     async chunkFile(file, currentIndex, totalFiles) {
-        // 1. Perform LLM analysis first, passing progress info
-        // Note: The delay is handled in chunkFiles, not here, to control rate across concurrent calls.
-        const analysis = await this.analysisService.analyseCode(file.content, file.relativePath, currentIndex, totalFiles);
-        // Check if analysis failed and log a warning
-        if ('analysisError' in analysis && analysis.analysisError) {
-            console.warn(`Warning: LLM analysis failed for ${file.relativePath}. Proceeding with basic metadata only.`);
+        // 1. Perform LLM analysis on the entire file content first, passing progress info, unless skipping analysis
+        let fileLevelAnalysis = { source: file.relativePath, analysisError: false }; // Default to no error if skipping analysis
+        if (!this.skipAnalysis) {
+            // Note: Delay is handled in chunkFiles to control rate across concurrent calls.
+            const analysisResult = await this.analysisService.analyseCode(file.content, file.relativePath, currentIndex, totalFiles);
+            // Check if analysis failed and log a warning
+            const analysisError = typeof analysisResult !== 'string' && analysisResult.analysisError;
+            if (analysisError) {
+                console.warn(`Warning: LLM analysis failed for ${file.relativePath}. Proceeding with basic metadata only.`);
+                fileLevelAnalysis = analysisResult; // Store the error result
+            }
+            else {
+                fileLevelAnalysis = analysisResult; // Store the successful summary
+            }
         }
-        // 2. Prepare document for chunking, using analysis results as initial metadata
+        else {
+            console.log(`Skipping LLM analysis for ${file.relativePath} as requested.`);
+        }
+        // 2. Prepare document for chunking, using the file content
         const doc = new MDocument({
-            docs: [{ text: file.content, metadata: analysis }],
+            docs: [{ text: file.content, metadata: { source: file.relativePath, fileExtension: file.relativePath.slice(file.relativePath.lastIndexOf('.')) } }], // Initial metadata with source and extension
             type: file.strategy,
         });
         let chunks;
@@ -92,14 +112,55 @@ export class Chunker {
             console.log(`No chunks generated for file: ${file.relativePath}.`);
             return [];
         }
-        // 5. Finalize metadata for each chunk
-        return chunks.map(chunk => ({
-            ...chunk,
-            metadata: {
-                ...(chunk.metadata || {}),
-                ...analysis,
-                source: file.relativePath
+        // 5. Finalise metadata for each chunk, adding the file-level analysis results and generating sparse vector
+        return Promise.all(chunks.map(async (chunk, index) => {
+            // Prepare the final metadata for the chunk
+            // Start with basic chunk metadata (like source and extension, added during doc creation)
+            const finalChunkMetadata = {
+                ...(chunk.metadata || {}), // Basic metadata from chunk creation
+                source: file.relativePath, // Ensure source (filePath) is present (might be overwritten by analysis, so set explicitly)
+                fileExtension: file.relativePath.slice(file.relativePath.lastIndexOf('.')) // Add fileExtension (might be overwritten)
+            };
+            // Add analysis result to metadata
+            if (typeof fileLevelAnalysis === 'string') {
+                finalChunkMetadata.summary = fileLevelAnalysis; // Add summary if analysis was successful
             }
+            else {
+                finalChunkMetadata.analysisError = fileLevelAnalysis.analysisError; // Add error flag if analysis failed
+                finalChunkMetadata.source = fileLevelAnalysis.source; // Ensure source is included in error case
+            }
+            // Generate sparse vector based on the vocabulary, using only chunk.text
+            if (this.vocabulary) {
+                // Tokenize only the chunk text for sparse vector generation
+                const tokensFromText = tokenizeCode(chunk.text, finalChunkMetadata.fileExtension || '.txt', undefined);
+                const termFrequencies = {};
+                for (const token of tokensFromText) { // Use only tokensFromText
+                    termFrequencies[token] = (termFrequencies[token] || 0) + 1;
+                }
+                const indices = [];
+                const values = [];
+                for (const term in termFrequencies) {
+                    if (this.vocabulary[term] !== undefined) {
+                        indices.push(this.vocabulary[term]);
+                        values.push(termFrequencies[term]);
+                    }
+                }
+                if (indices.length > 0) {
+                    finalChunkMetadata.sparseVector = { indices, values };
+                }
+                else {
+                    // Ensure sparseVector is not undefined if no terms matched, to maintain consistent payload structure
+                    finalChunkMetadata.sparseVector = { indices: [], values: [] };
+                }
+            }
+            else {
+                // Fallback or if vocabulary is not provided - can be undefined or empty
+                finalChunkMetadata.sparseVector = { indices: [], values: [] }; // Or undefined, depending on desired Qdrant behavior
+            }
+            return {
+                ...chunk,
+                metadata: finalChunkMetadata
+            };
         }));
     }
     /** Retrieves the appropriate chunking options based on the strategy type. */

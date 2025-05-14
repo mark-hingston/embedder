@@ -1,3 +1,4 @@
+import { Vocabulary } from "./vocabularyBuilder.js";
 import { promises as fs } from 'fs';
 import path from 'path';
 import { StateManager, FilePointsState, EMPTY_STATE } from './stateManager.js';
@@ -17,7 +18,7 @@ export class FileStateManager implements StateManager {
   constructor(stateFilePath: string) {
     // Ensure the path is absolute or resolve it relative to the current working directory
     this.stateFilePath = path.resolve(stateFilePath);
-    console.log(`FileStateManager initialized. State file path: ${this.stateFilePath}`);
+    console.log(`FileStateManager initialised. State file path: ${this.stateFilePath}`);
   }
 
   /**
@@ -102,6 +103,47 @@ export class FileStateManager implements StateManager {
       console.log(logMessage);
     } catch (error) {
       console.error(`Error saving state to ${this.stateFilePath}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Loads the vocabulary from a separate JSON file.
+   * @returns A promise resolving to the loaded Vocabulary object or undefined if not found.
+   */
+  async loadVocabulary(): Promise<Vocabulary | undefined> {
+    const vocabularyFilePath = this.stateFilePath.replace(/\.json$/, '-vocabulary.json'); // Use a distinct file name
+    try {
+      await this.ensureStateDirectoryExists(); // Ensure directory exists before reading
+      const data = await fs.readFile(vocabularyFilePath, 'utf-8');
+      const vocabulary = JSON.parse(data) as Vocabulary;
+      console.log(`Vocabulary loaded successfully from ${vocabularyFilePath}`);
+      return vocabulary;
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        console.log(`Vocabulary file ${vocabularyFilePath} not found. Returning undefined.`);
+        return undefined;
+      }
+      console.error(`Error loading vocabulary from ${vocabularyFilePath}:`, error);
+      console.warn(`Returning undefined due to vocabulary load error.`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Saves the provided vocabulary to a separate JSON file.
+   * @param vocabulary The Vocabulary object to save.
+   */
+  async saveVocabulary(vocabulary: Vocabulary): Promise<void> {
+    const vocabularyFilePath = this.stateFilePath.replace(/\.json$/, '-vocabulary.json'); // Use a distinct file name
+    console.log(`Saving vocabulary with ${Object.keys(vocabulary).length} terms to ${vocabularyFilePath}...`);
+    try {
+      await this.ensureStateDirectoryExists(); // Ensure directory exists before writing
+      const data = JSON.stringify(vocabulary, null, 2); // Pretty print JSON
+      await fs.writeFile(vocabularyFilePath, data, 'utf-8');
+      console.log(`Vocabulary saved successfully to ${vocabularyFilePath}.`);
+    } catch (error) {
+      console.error(`Error saving vocabulary to ${vocabularyFilePath}:`, error);
       throw error;
     }
   }

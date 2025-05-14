@@ -12,22 +12,18 @@ export class BlobStateManager {
      * Creates an instance of BlobStateManager.
      * @param connectionString Azure Storage connection string.
      * @param containerName The name of the blob container to use.
-     * @param blobName The name of the blob file to store the state (e.g., 'embedding-state.json').
      */
-    constructor(connectionString, containerName, blobName) {
+    constructor(connectionString, containerName) {
         if (!connectionString) {
             throw new Error("Azure Storage connection string is required for BlobStateManager.");
         }
         if (!containerName) {
             throw new Error("Azure Storage container name is required for BlobStateManager.");
         }
-        if (!blobName) {
-            throw new Error("Azure Storage blob name is required for BlobStateManager.");
-        }
         const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
         this.containerClient = blobServiceClient.getContainerClient(containerName);
-        this.blobName = blobName;
-        console.log(`BlobStateManager initialized for container '${containerName}', blob '${blobName}'.`);
+        this.blobName = "file-points.json";
+        console.log(`BlobStateManager initialised for container '${containerName}', blob '${this.blobName}'.`);
     }
     /**
      * Ensures the configured blob container exists.
@@ -125,6 +121,53 @@ export class BlobStateManager {
             throw error; // Re-throw the original error to signal failure
         }
     }
+    /**
+       * Loads the vocabulary from a separate blob.
+       * @returns A promise resolving to the loaded Vocabulary object or undefined if not found.
+       */
+    async loadVocabulary() {
+        const vocabularyBlobName = this.blobName.replace(/\.json$/, '-vocabulary.json'); // Use a distinct blob name
+        const blobClient = this.containerClient.getBlockBlobClient(vocabularyBlobName);
+        try {
+            const downloadResponse = await blobClient.downloadToBuffer();
+            const vocabularyString = downloadResponse.toString("utf8");
+            const vocabulary = JSON.parse(vocabularyString);
+            console.log(`Loaded vocabulary with ${Object.keys(vocabulary).length} terms from blob '${vocabularyBlobName}'`);
+            return vocabulary;
+        }
+        catch (error) {
+            if (error instanceof RestError && error.statusCode === 404) {
+                console.log(`Vocabulary blob '${vocabularyBlobName}' not found. Returning undefined.`);
+                return undefined;
+            }
+            else {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.warn(`Warning: Could not read or parse vocabulary blob '${vocabularyBlobName}': ${errorMessage}. Returning undefined.`);
+                return undefined;
+            }
+        }
+    }
+    /**
+     * Saves the provided vocabulary to a separate blob, overwriting if it exists.
+     * @param vocabulary The Vocabulary object to save.
+     */
+    async saveVocabulary(vocabulary) {
+        const vocabularyBlobName = 'vocabulary.json';
+        console.log(`Saving vocabulary with ${Object.keys(vocabulary).length} terms to blob '${vocabularyBlobName}'...`);
+        const blobClient = this.containerClient.getBlockBlobClient(vocabularyBlobName);
+        try {
+            const vocabularyString = JSON.stringify(vocabulary, null, 2); // Pretty-print JSON
+            const buffer = Buffer.from(vocabularyString, "utf8");
+            await blobClient.uploadData(buffer, {
+                blobHTTPHeaders: { blobContentType: "application/json" }
+            });
+            console.log(`Vocabulary blob '${vocabularyBlobName}' saved successfully.`);
+        }
+        catch (error) {
+            console.error(`ERROR saving vocabulary blob '${vocabularyBlobName}': ${error}`);
+            throw error; // Re-throw the original error
+        }
+    }
     // --- Pure Logic Methods (copied/adapted from original StateManager) ---
     getPointsForFiles(files, currentState) {
         const pointIds = new Set();
@@ -149,7 +192,7 @@ export class BlobStateManager {
     calculateNextState(currentState, filesToDeletePointsFor, newFilePoints, // Points successfully upserted in this run
     pendingChunks, // See JSDoc above for behavior
     currentCommit) {
-        // Ensure currentState has files and pendingChunks initialized if they are missing
+        // Ensure currentState has files and pendingChunks initialised if they are missing
         const currentFiles = currentState.files ?? {};
         const currentPending = currentState.pendingChunks ?? {};
         const nextFilesState = { ...currentFiles };
