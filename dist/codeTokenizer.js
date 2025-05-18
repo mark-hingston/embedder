@@ -1,13 +1,16 @@
 import Parser from 'tree-sitter';
 import TypeScript from 'tree-sitter-typescript';
 import * as CSharp from 'tree-sitter-c-sharp';
+import JavaScript from 'tree-sitter-javascript'; // Import JavaScript parser
+import JSONLang from 'tree-sitter-json'; // Import JSON parser
 // Map file extensions to Tree-sitter language names
 const extensionToLanguageName = {
     '.ts': 'typescript',
-    '.js': 'typescript',
+    '.js': 'javascript', // Map .js to 'javascript'
     '.tsx': 'typescript',
     '.jsx': 'typescript',
     '.cs': 'csharp',
+    '.json': 'json', // Map .json to 'json'
 };
 // Store loaded language parsers
 const languages = new Map(); // Use 'any' as a workaround for type definition issues
@@ -18,6 +21,8 @@ const languages = new Map(); // Use 'any' as a workaround for type definition is
 export async function initializeCodeTokenizer() {
     languages.set('typescript', TypeScript.typescript);
     languages.set('csharp', CSharp.default); // Use .default for CJS default export
+    languages.set('javascript', JavaScript); // Add JavaScript parser
+    languages.set('json', JSONLang); // Add JSON parser
 }
 /**
  * Retrieves a configured Tree-sitter parser for the given language name.

@@ -128,7 +128,6 @@ export class EmbeddingPipeline {
                     fileSummariesToEmbed.push({
                         id: fileSummaryId,
                         payload: fileSummaryPayload,
-                        text: fileAnalysis.summary,
                         sourceFile: sourceFile, // Keep track of the source file
                     });
                     allTextsToEmbed.push(fileAnalysis.summary); // Add summary text to the list for embedding
@@ -145,7 +144,8 @@ export class EmbeddingPipeline {
                         if (!chunk.metadata) {
                             chunk.metadata = {};
                         }
-                        // Chunk analysis is now done within the Chunker, so we just need to add the chunk text to the list for embedding
+                        // Chunk processing (sparse vector generation, metadata inclusion) is now done within the Chunker.
+                        // We just need to add the chunk text to the list for embedding.
                     }
                     catch (error) {
                         const errorMessage = error instanceof Error ? error.message : String(error);

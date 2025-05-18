@@ -115,7 +115,7 @@ export class EmbeddingPipeline {
 
             // 7. Combine pending chunks (if any) with newly generated chunks and extract file summaries
             const allChunksToProcessMap = new Map<string, Chunk[]>();
-            const fileSummariesToEmbed: { id: string; payload: any; text: string; sourceFile: string }[] = [];
+            const fileSummariesToEmbed: { id: string; payload: any; sourceFile: string }[] = [];
             const allTextsToEmbed: string[] = []; // Collect all texts (summaries + chunks) for batch embedding
 
             let pendingChunkCount = 0;
@@ -157,7 +157,6 @@ export class EmbeddingPipeline {
                     fileSummariesToEmbed.push({
                         id: fileSummaryId,
                         payload: fileSummaryPayload,
-                        text: fileAnalysis.summary,
                         sourceFile: sourceFile, // Keep track of the source file
                     });
                     allTextsToEmbed.push(fileAnalysis.summary); // Add summary text to the list for embedding
@@ -175,7 +174,8 @@ export class EmbeddingPipeline {
                         if (!chunk.metadata) {
                             chunk.metadata = {};
                         }
-                        // Chunk analysis is now done within the Chunker, so we just need to add the chunk text to the list for embedding
+                        // Chunk processing (sparse vector generation, metadata inclusion) is now done within the Chunker.
+                        // We just need to add the chunk text to the list for embedding.
                     } catch (error) {
                         const errorMessage = error instanceof Error ? error.message : String(error);
                         console.warn(`Error during chunk processing for ${sourceFile} chunk ${i}: ${errorMessage}`);

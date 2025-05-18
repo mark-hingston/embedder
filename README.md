@@ -23,7 +23,7 @@ This project provides a configurable pipeline to process files within a Git repo
 *   **Vocabulary Building & Sparse Vector Generation:**
     *   The pipeline now includes an integrated vocabulary building step that processes all files to build a term vocabulary based on token frequencies and document frequencies.
     *   The `codeTokenizer.ts` provides language-aware tokenization (TS, C#) and fallback for other types.
-    *   During the main embedding pipeline, this vocabulary is built (if not already present or if a full scan is performed) and then loaded by the `Chunker`.
+    *   During the main embedding pipeline, this vocabulary is built on each execution and then loaded by the `Chunker`.
     *   The `Chunker` uses the vocabulary to generate sparse vectors (TF-IDF like, based on term frequency within the chunk and presence in the global vocabulary) for each chunk. These sparse vectors are stored alongside dense embeddings in Qdrant.
 *   **Embedding Generation:** Uses a configurable embedding model via the AI SDK (`@ai-sdk/openai-compatible` or others) to generate dense vector embeddings for each text chunk. Supports batching, configurable delays, and retries.
 *   **Vector Storage (Qdrant):**
@@ -192,7 +192,7 @@ The `EmbeddingPipeline` orchestrates the entire process by executing a sequence 
     SUMMARY_API_DELAY_MS=1000 # Delay after each analysis call (ms) - useful for rate limiting (optional, default 1000ms)
 
     # --- Qdrant Configuration ---
-    QDRANT_HOST=localhost: # Host of your Qdrant instance
+    QDRANT_HOST=localhost # Host of your Qdrant instance
     QDRANT_PORT=6333 # Port of your Qdrant instance
     QDRANT_API_KEY= # Optional Qdrant API Key if authentication is enabled
     QDRANT_COLLECTION_NAME=my_code_embeddings # Name for the Qdrant collection
