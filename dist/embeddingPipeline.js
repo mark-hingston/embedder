@@ -117,7 +117,7 @@ export class EmbeddingPipeline {
                 // Extract file summary from the first chunk's metadata (assuming it's stored there)
                 const fileAnalysis = chunks[0]?.metadata; // Assuming file analysis is in the first chunk's metadata
                 if (fileAnalysis && fileAnalysis.summary) {
-                    const fileSummaryId = `file-summary-${this.options.fileProcessor.generateHash(sourceFile)}`; // Deterministic ID
+                    const fileSummaryId = randomUUID(); // Generate a unique ID for each file summary
                     const fileSummaryPayload = {
                         text: fileAnalysis.summary, // The summary text
                         source: sourceFile,
