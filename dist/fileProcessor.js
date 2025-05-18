@@ -1,7 +1,7 @@
 import { join } from "path";
 import { readFile } from "node:fs/promises";
 import { fsExists, isCode, isHtml, isJson, isLockFile, isMarkdown, isTextFile, isImageFile } from "./utilities.js";
-import * as crypto from 'crypto'; // Import crypto module for hashing
+import * as crypto from 'crypto';
 /**
  * Filters a list of candidate file paths, loads the content of valid text files,
  * and determines the appropriate chunking strategy for each.
@@ -45,7 +45,6 @@ export class FileProcessor {
                     continue;
                 }
                 // 4. Check if it's likely a text file (skip remaining binaries)
-                // This check is still useful for non-image binaries missed by extension
                 if (!(await isTextFile(filePath))) {
                     skippedBinary++;
                     continue;
@@ -63,7 +62,6 @@ export class FileProcessor {
                 });
             }
             catch (readError) {
-                // Catch errors during fs operations or reading
                 console.error(`Error processing file ${relativePath}: ${readError instanceof Error ? readError.message : readError}. Skipping.`);
                 skippedReadError++;
             }
@@ -77,9 +75,6 @@ export class FileProcessor {
      * @returns The determined ChunkStrategy.
      */
     determineStrategy(filePath) {
-        // It's generally better to check based on the relative path if possible,
-        // as it's less likely to contain irrelevant directory names.
-        // However, using filePath is fine if baseDir structure is consistent.
         if (isCode(filePath))
             return "code";
         if (isHtml(filePath))
@@ -88,12 +83,10 @@ export class FileProcessor {
             return "json";
         if (isMarkdown(filePath))
             return "markdown";
-        // Add other specific text types here if needed (e.g., XML, CSV)
         return "text"; // Default strategy for unrecognized text files
     }
     /**
      * Generates a deterministic SHA-256 hash for a given string input.
-     * Useful for creating stable IDs based on file paths or content.
      * @param input The string to hash.
      * @returns The SHA-256 hash as a hexadecimal string.
      */

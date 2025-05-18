@@ -181,7 +181,6 @@ export class QdrantManager {
                     console.log(`Upserting batch ${batchNumber}/${totalBatches} (${batch.length} points)...`);
                     await retry(async () => {
                         // Prepare points for upsertion, including sparse vectors if they exist
-                        // Prepare points for upsertion, including sparse vectors if they exist
                         const pointsToUpsert = batch.map(point => {
                             const qdrantPoint = {
                                 id: point.id,

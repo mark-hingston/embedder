@@ -3,7 +3,7 @@
  * This ensures that subsequent requests wait for the specified duration.
  */
 export class RateLimiter {
-    private coolDownUntil: number = 0; // Timestamp (ms) until which requests should pause
+    private coolDownUntil: number = 0;
 
     /**
      * Waits if currently in a cooldown period due to a rate limit.
@@ -24,10 +24,8 @@ export class RateLimiter {
      */
     notifyRateLimit(retryAfterSeconds: number): void {
         const now = Date.now();
-        // Add a small buffer (e.g., 500ms) to the wait time just in case
         const newCoolDownUntil = now + (retryAfterSeconds * 1000) + 500;
 
-        // Update only if the new cooldown extends further than the current one
         if (newCoolDownUntil > this.coolDownUntil) {
             this.coolDownUntil = newCoolDownUntil;
             console.log(`RateLimiter: Rate limit hit. Cooling down until ${new Date(this.coolDownUntil).toISOString()}.`);

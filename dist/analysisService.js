@@ -33,10 +33,8 @@ export class AnalysisService {
         try {
             const cachedContent = await fs.readFile(cacheFilePath, 'utf-8');
             const cachedData = JSON.parse(cachedContent);
-            // Validate cache structure and content hash
             if (cachedData && typeof cachedData === 'object' && cachedData.sourceContentHash === currentContentHash && typeof cachedData.summary === 'string') {
                 console.log(`Cache hit (Content Hash Match) for: ${filePath}${progressInfo}. Reading from cache...`);
-                // No Zod validation needed for plain text, just return the string
                 return cachedData.summary;
             }
             else if (cachedData && cachedData.sourceContentHash !== currentContentHash) {
@@ -56,10 +54,8 @@ export class AnalysisService {
         console.log(`Requesting LLM analysis for: ${filePath}${progressInfo}`);
         const fileExtension = filePath.split('.').pop()?.toLowerCase();
         try {
-            // Explicitly type the retry call
             const result = await retry(async () => {
                 await this.rateLimiter.waitForPermit();
-                // Prompt designed to guide the LLM in generating a concise summary.
                 const prompt = `
  Provide a concise summary of the following source code file.
  File Path: ${filePath}
@@ -78,15 +74,14 @@ export class AnalysisService {
                     model: this.llm,
                     prompt: prompt,
                 });
-                const summary = response.text; // Get the plain text response
-                // No Zod validation needed for plain text
+                const summary = response.text;
                 // --- Cache Write Logic Start ---
                 try {
                     await fs.mkdir(cacheDir, { recursive: true }); // Ensure cache directory exists
                     const cacheData = {
-                        sourceContentHash: currentContentHash, // Use the hash calculated at the start
-                        source: filePath, // Add the source file path
-                        summary // Store the plain text summary
+                        sourceContentHash: currentContentHash,
+                        source: filePath,
+                        summary
                     };
                     await fs.writeFile(cacheFilePath, JSON.stringify(cacheData, null, 2));
                     console.log(`Successfully cached analysis for: ${filePath}`);
@@ -96,22 +91,18 @@ export class AnalysisService {
                     // Don't fail the overall analysis if caching fails
                 }
                 // --- Cache Write Logic End ---
-                return summary; // Return the plain text summary
+                return summary;
             }, {
-                maxRetries: 5, // Increased retries slightly to accommodate rate limit waits
+                maxRetries: 5,
                 initialDelay: 1500,
                 onRetry: (error, attempt) => {
                     console.warn(`LLM analysis retry ${attempt} for ${filePath}${progressInfo}: ${error.message}`);
-                    // --- Rate Limit Error Handling ---
-                    // Attempt to detect rate limits more robustly.
-                    // Prioritize structured error info if available (common in HTTP clients).
                     const response = error?.response;
                     const status = response?.status;
                     const headers = response?.headers;
                     const message = error.message || '';
                     let retryAfterSeconds = null;
                     let detectedVia = null; // Track detection method
-                    // 1. Check standard HTTP 429 status and Retry-After header
                     if (status === 429) {
                         const retryAfterHeader = headers?.['retry-after'];
                         if (retryAfterHeader && typeof retryAfterHeader === 'string') {
@@ -123,45 +114,35 @@ export class AnalysisService {
                         }
                         // If status is 429 but header is missing/invalid, we still know it's a rate limit
                         if (!detectedVia) {
-                            detectedVia = 'HTTP Status 429';
                         }
                     }
-                    // 2. Fallback: Check error message if structured info wasn't conclusive
                     if (!detectedVia && (/rate limit/i.test(message) || /exceeded token rate limit/i.test(message))) {
-                        detectedVia = 'Error Message Regex';
-                        // Try parsing retry duration from message as a last resort
                         const retryAfterMatch = message.match(/retry after (\d+)/i);
                         if (retryAfterMatch) {
                             const parsedSeconds = parseInt(retryAfterMatch[1], 10);
                             if (!isNaN(parsedSeconds)) {
                                 retryAfterSeconds = parsedSeconds;
-                                detectedVia = 'Error Message Regex (Parsed Duration)';
                             }
                         }
                     }
-                    // 3. If a rate limit was detected (by any means), notify the limiter
                     if (detectedVia) {
                         if (retryAfterSeconds !== null && retryAfterSeconds > 0) {
                             console.log(`Rate limit detected for ${filePath} via ${detectedVia}. Waiting ${retryAfterSeconds} seconds.`);
                             this.rateLimiter.notifyRateLimit(retryAfterSeconds);
                         }
                         else {
-                            // Detected rate limit but couldn't get a specific duration
                             const defaultCooldown = 60;
                             console.warn(`Rate limit detected for ${filePath} via ${detectedVia}, but couldn't determine Retry-After duration. Applying default cooldown: ${defaultCooldown} seconds.`);
                             this.rateLimiter.notifyRateLimit(defaultCooldown);
                         }
                     }
-                    // --- End Rate Limit Error Handling ---
                 }
             });
             console.log(`LLM analysis successful for: ${filePath}${progressInfo}`);
-            return result; // Return the string result
+            return result;
         }
         catch (error) {
-            // Catch both API/retry errors and potentially cache errors if not caught earlier
             console.error(`LLM analysis failed for ${filePath}${progressInfo}: ${error}`);
-            // Return a specific error object if analysis fails
             return { source: filePath, analysisError: true };
         }
     }

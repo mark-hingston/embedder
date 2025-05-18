@@ -25,13 +25,11 @@ export class Chunker {
      * @param defaultOverlap Default chunk overlap for fallback recursive chunking.
      * @param vocabulary Optional pre-loaded vocabulary for sparse vector generation.
      */
-    constructor(analysisService, analysisApiDelayMs = 0, options, defaultSize = 512, defaultOverlap = 50, vocabulary, // Added vocabulary parameter
-    skipAnalysis = false // Added optional parameter to skip analysis
-    ) {
+    constructor(analysisService, analysisApiDelayMs = 0, options, defaultSize = 512, defaultOverlap = 50, vocabulary, skipAnalysis = false) {
         this.skipAnalysis = skipAnalysis;
         this.analysisService = analysisService;
         this.analysisApiDelayMs = analysisApiDelayMs;
-        this.vocabulary = vocabulary; // Store the vocabulary
+        this.vocabulary = vocabulary;
         const userChunkingOptions = options ?? {};
         // Merge default and user-provided chunking options
         this.chunkingOptions = {
@@ -43,7 +41,7 @@ export class Chunker {
         };
         this.defaultChunkSize = defaultSize;
         this.defaultChunkOverlap = defaultOverlap;
-        this.analysisApiDelayMs = analysisApiDelayMs; // Ensure this is set
+        this.analysisApiDelayMs = analysisApiDelayMs;
     }
     /**
      * Chunks a single file after performing LLM analysis.
@@ -64,10 +62,10 @@ export class Chunker {
             const analysisError = typeof analysisResult !== 'string' && analysisResult.analysisError;
             if (analysisError) {
                 console.warn(`Warning: LLM analysis failed for ${file.relativePath}. Proceeding with basic metadata only.`);
-                fileLevelAnalysis = analysisResult; // Store the error result
+                fileLevelAnalysis = analysisResult;
             }
             else {
-                fileLevelAnalysis = analysisResult; // Store the successful summary
+                fileLevelAnalysis = analysisResult;
             }
         }
         else {
@@ -123,18 +121,18 @@ export class Chunker {
             };
             // Add analysis result to metadata
             if (typeof fileLevelAnalysis === 'string') {
-                finalChunkMetadata.summary = fileLevelAnalysis; // Add summary if analysis was successful
+                finalChunkMetadata.summary = fileLevelAnalysis;
             }
             else {
-                finalChunkMetadata.analysisError = fileLevelAnalysis.analysisError; // Add error flag if analysis failed
-                finalChunkMetadata.source = fileLevelAnalysis.source; // Ensure source is included in error case
+                finalChunkMetadata.analysisError = fileLevelAnalysis.analysisError;
+                finalChunkMetadata.source = fileLevelAnalysis.source;
             }
             // Generate sparse vector based on the vocabulary, using only chunk.text
             if (this.vocabulary) {
                 // Tokenize only the chunk text for sparse vector generation
                 const tokensFromText = tokenizeCode(chunk.text, finalChunkMetadata.fileExtension || '.txt', undefined);
                 const termFrequencies = {};
-                for (const token of tokensFromText) { // Use only tokensFromText
+                for (const token of tokensFromText) {
                     termFrequencies[token] = (termFrequencies[token] || 0) + 1;
                 }
                 const indices = [];

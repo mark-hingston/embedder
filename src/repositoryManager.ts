@@ -20,7 +20,6 @@ export class RepositoryManager {
     private repo: SimpleGit;
 
     constructor(private baseDir: string) {
-        // Initialize simple-git instance for the specified directory
         this.repo = simpleGit(this.baseDir);
     }
 
@@ -40,7 +39,6 @@ export class RepositoryManager {
      * @returns A promise resolving to the commit hash string.
      */
     async getCurrentCommit(): Promise<string> {
-        // Use revparse to get the full commit hash of HEAD
         return (await this.repo.revparse(['HEAD'])).trim();
     }
 
@@ -59,24 +57,21 @@ export class RepositoryManager {
         const filesToProcess = new Set<string>();
         const filesToDeletePointsFor = new Set<string>();
 
-        let useDiff = !!diffBaseCommit; // Use diff if a base commit is provided
+        let useDiff = !!diffBaseCommit;
 
         if (useDiff) {
             const baseCommit = diffBaseCommit!;
             console.log(`Attempting to process diff between ${baseCommit} and HEAD...`);
 
             try {
-                // 1. Check if the base commit exists locally
                 try {
                     await this.repo.raw(['cat-file', '-e', `${baseCommit}^{commit}`]);
                     console.log(`Commit ${baseCommit} found locally.`);
                 } catch (checkError) {
-                    // 2. If not local, attempt to fetch full history
                     console.warn(`Commit ${baseCommit} not found locally. Attempting to fetch full history (git fetch --depth=0)...`);
                     try {
                         await this.repo.fetch(['--depth=0']);
                         console.log("Fetch complete. Retrying commit check...");
-                        // Re-check after fetch
                         await this.repo.raw(['cat-file', '-e', `${baseCommit}^{commit}`]);
                         console.log(`Commit ${baseCommit} found after fetch.`);
                     } catch (fetchOrRecheckError) {
@@ -85,73 +80,56 @@ export class RepositoryManager {
                     }
                 }
 
-                // 3. Perform the diff
                 console.log(`Performing diff: ${baseCommit}..HEAD`);
                 const diffOutput = await this.repo.diff([
-                    "--name-status", // Output format: <status>\t<file1>[\t<file2>]
+                    "--name-status",
                     baseCommit,
                     "HEAD",
                 ]);
                 const diffSummary = diffOutput.split('\n').filter(line => line.trim() !== '');
                 console.log(`Found ${diffSummary.length} changes between ${baseCommit} and HEAD.`);
 
-                // 4. Process the diff output
                 for (const line of diffSummary) {
                     const parts = line.split('\t');
-                    const status = parts[0].trim(); // e.g., 'A', 'M', 'D', 'R100', 'C050'
-                    const path1 = parts[1].trim(); // Old path for R/C, path for A/M/D/T
-                    const path2 = parts.length > 2 ? parts[2].trim() : null; // New path for R/C
+                    const status = parts[0].trim();
+                    const path1 = parts[1].trim();
+                    const path2 = parts.length > 2 ? parts[2].trim() : null;
 
-                    if (status.startsWith('A')) { // Added
+                    if (status.startsWith('A')) {
                         filesToProcess.add(path1);
-                    } else if (status.startsWith('M') || status.startsWith('T')) { // Modified or Type Changed
+                    } else if (status.startsWith('M') || status.startsWith('T')) {
                         filesToProcess.add(path1);
-                        // Existing points for modified files need deletion before upserting new ones
                         if (previousState.files[path1]) filesToDeletePointsFor.add(path1);
-                    } else if (status.startsWith('C')) { // Copied
-                        const targetPath = path2 ?? path1; // path2 should exist for Copy
+                    } else if (status.startsWith('C')) {
+                        const targetPath = path2 ?? path1;
                         filesToProcess.add(targetPath);
-                        // Points for the original path (path1) are *not* deleted unless path1 was also modified/deleted separately.
-                    } else if (status.startsWith('R')) { // Renamed
+                    } else if (status.startsWith('R')) {
                         const oldPath = path1;
-                        const newPath = path2 ?? path1; // path2 should exist for Rename
+                        const newPath = path2 ?? path1;
                         filesToProcess.add(newPath);
-                        // Points associated with the old path need deletion
                         if (previousState.files[oldPath]) filesToDeletePointsFor.add(oldPath);
-                    } else if (status.startsWith('D')) { // Deleted
-                        // Points associated with the deleted path need deletion
+                    } else if (status.startsWith('D')) {
                         if (previousState.files[path1]) filesToDeletePointsFor.add(path1);
                     }
                 }
             } catch (diffError) {
-                // This catch block now specifically handles failures *during the diff command itself*,
-                // after the commit has been verified or fetched.
                 console.error(`Error performing diff between ${baseCommit} and HEAD:`, diffError);
-                // According to the plan, we should error out if the diff fails after verifying the commit
                 throw new Error(`Failed to perform git diff between verified commit "${baseCommit}" and HEAD.`);
             }
         } else {
-            // Full Scan Logic (if diffBaseCommit was undefined)
             console.log("Processing all tracked files (full scan)...");
-            // Get all files currently tracked by Git
             const gitFiles = (await this.repo.raw(["ls-files"])).split("\n").filter(Boolean);
             console.log(`Found ${gitFiles.length} files via ls-files.`);
 
             const currentFilesSet = new Set(gitFiles);
 
-            // Mark all currently tracked files for potential processing
             gitFiles.forEach(file => filesToProcess.add(file));
 
-            // Identify files that were in the previous state but are *not* currently tracked (i.e., deleted)
-            // Also, in a full scan, mark all *existing* files from the previous state for point deletion,
-            // as they will be re-processed.
             const previouslyKnownFiles = Object.keys(previousState.files);
             previouslyKnownFiles.forEach(knownFile => {
                 if (!currentFilesSet.has(knownFile)) {
-                    // File was deleted since last state save
                     filesToDeletePointsFor.add(knownFile);
                 } else {
-                    // File still exists, but in a full scan, its old points need deletion before re-processing
                     filesToDeletePointsFor.add(knownFile);
                 }
             });

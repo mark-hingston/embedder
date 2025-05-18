@@ -1,5 +1,5 @@
 import natural from 'natural';
-const PorterStemmer = natural.PorterStemmer; // Instance
+const PorterStemmer = natural.PorterStemmer;
 // Define a default set of stop words (Copied exactly from embedder/src/vocabularyBuilder.ts)
 const DEFAULT_STOP_WORDS = new Set([
     // Common English stop words
@@ -150,9 +150,9 @@ export function processTextToFinalTokens(text) {
                     continue;
                 }
                 processedTokensFinal.push(stemmedToken);
-            } // Closes for (const dotPart of dotParts)
-        } // end loop over tokenPartFromCompound
-    } // end loop over originalToken
+            }
+        }
+    }
     return processedTokensFinal;
 }
 // Export the stop words set as well, in case it's needed elsewhere (e.g., for debugging or visualization)

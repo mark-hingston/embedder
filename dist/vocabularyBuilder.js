@@ -1,10 +1,5 @@
-// File: src/vocabularyBuilder.ts
-import natural from 'natural';
-const PorterStemmer = natural.PorterStemmer; // Instance
 import { processTextToFinalTokens } from "./tokenProcessor.js";
 import { tokenizeCode, initializeCodeTokenizer } from "./codeTokenizer.js";
-// Define a default set of stop words
-// Helper function to split camelCase and snake_case words
 export class VocabularyBuilder {
     stateManager;
     termStats = new Map();
@@ -77,7 +72,7 @@ export class VocabularyBuilder {
             return termA.localeCompare(termB);
         });
         for (let i = 0; i < Math.min(sortedTerms.length, targetSize); i++) {
-            vocabulary[sortedTerms[i][0]] = i; // Assign index based on sorted order
+            vocabulary[sortedTerms[i][0]] = i;
         }
         console.log(`Built vocabulary with ${Object.keys(vocabulary).length} terms (target: ${targetSize}, minDf: ${minDf}, maxDf: ${maxDf}).`);
         await this.stateManager.saveVocabulary(vocabulary);

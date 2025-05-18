@@ -8,35 +8,26 @@ import { DEFAULT_RETRY_OPTIONS } from "./retryOptions.js";
  * @throws {Error} Throws the last error encountered if all retries fail.
  */
 export async function retry(operation, options = {}) {
-    // Merge default options with provided overrides
     const config = { ...DEFAULT_RETRY_OPTIONS, ...options };
     let lastError;
     let delay = config.initialDelay;
     for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
         try {
-            // Attempt the operation
             return await operation();
         }
         catch (error) {
-            // Record the error
             lastError = error instanceof Error ? error : new Error(String(error));
-            // If it's the last attempt, break the loop to throw the error
             if (attempt >= config.maxRetries) {
                 break;
             }
-            // Execute the onRetry callback if provided
             if (config.onRetry) {
                 config.onRetry(lastError, attempt);
             }
-            // Calculate next delay: exponential backoff with a maximum limit
             delay = Math.min(delay * config.factor, config.maxDelay);
-            // Add jitter: random fraction (e.g., +/- 10%) of the delay to prevent thundering herd
-            const jitter = delay * 0.2 * (Math.random() - 0.5); // +/- 10% jitter
-            const waitTime = Math.max(0, delay + jitter); // Ensure wait time is not negative
-            // Wait before the next attempt
+            const jitter = delay * 0.2 * (Math.random() - 0.5);
+            const waitTime = Math.max(0, delay + jitter);
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }
-    // If loop finishes without returning, all retries failed
-    throw lastError; // Non-null assertion because lastError is guaranteed to be set if loop finishes
+    throw lastError;
 }

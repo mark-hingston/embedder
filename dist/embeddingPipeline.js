@@ -72,7 +72,6 @@ export class EmbeddingPipeline {
                 this.options.chunker.vocabulary = undefined;
             }
             // Chunk the content of processable files, including LLM analysis metadata
-            // The chunker instance from this.options.chunker will now use the loaded vocabulary (if any)
             const fileChunksMap = await this.options.chunker.chunkFiles(processableFiles, this.options.maxConcurrentChunking);
             // Early exit if no chunks were generated (e.g., all files were empty or failed chunking),
             // but still save state reflecting deletions.

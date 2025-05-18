@@ -12,7 +12,6 @@ export class FileStateManager {
      * @param stateFilePath The absolute or relative path to the JSON file where the state will be stored.
      */
     constructor(stateFilePath) {
-        // Ensure the path is absolute or resolve it relative to the current working directory
         this.stateFilePath = path.resolve(stateFilePath);
         console.log(`FileStateManager initialised. State file path: ${this.stateFilePath}`);
     }
@@ -26,10 +25,9 @@ export class FileStateManager {
             console.log(`Ensured state directory exists: ${dir}`);
         }
         catch (error) {
-            // Ignore EEXIST error (directory already exists)
             if (error.code !== 'EEXIST') {
                 console.error(`Error creating state directory ${dir}:`, error);
-                throw error; // Re-throw other errors
+                throw error;
             }
             console.log(`State directory already exists: ${dir}`);
         }
@@ -45,12 +43,10 @@ export class FileStateManager {
             const data = await fs.readFile(this.stateFilePath, 'utf-8');
             const state = JSON.parse(data);
             console.log(`State loaded successfully from ${this.stateFilePath}`);
-            // Basic validation/migration
             if (!state || typeof state.files !== 'object') {
                 console.warn(`Invalid state format found in ${this.stateFilePath} (missing 'files' object). Returning empty state.`);
                 return { ...EMPTY_STATE }; // Return a copy
             }
-            // Ensure pendingChunks is present if needed, or default to empty
             if (state.pendingChunks === undefined || state.pendingChunks === null) {
                 state.pendingChunks = {};
             }
@@ -62,7 +58,6 @@ export class FileStateManager {
                 return { ...EMPTY_STATE }; // Return a copy if file doesn't exist
             }
             console.error(`Error loading state from ${this.stateFilePath}:`, error);
-            // Return empty state on parse errors or other read issues to avoid crashing
             console.warn(`Returning empty state due to load error.`);
             return { ...EMPTY_STATE };
         }
@@ -74,12 +69,11 @@ export class FileStateManager {
     async saveState(state) {
         try {
             await this.ensureStateDirectoryExists(); // Ensure directory exists before writing
-            // Ensure pendingChunks is defined (as empty obj) if null/undefined before stringifying
             const stateToSave = {
                 ...state,
                 pendingChunks: state.pendingChunks ?? {}
             };
-            const data = JSON.stringify(stateToSave, null, 2); // Pretty print JSON
+            const data = JSON.stringify(stateToSave, null, 2);
             await fs.writeFile(this.stateFilePath, data, 'utf-8');
             const numFilesWithPoints = Object.keys(stateToSave.files).length;
             const numFilesWithPending = Object.keys(stateToSave.pendingChunks).length;
@@ -89,7 +83,6 @@ export class FileStateManager {
                 logMessage += `\n  - Files with pending chunks: ${numFilesWithPending}`;
             }
             else {
-                // Keep simpler format if no pending chunks
                 logMessage = `State saved successfully for ${numFilesWithPoints} files to ${this.stateFilePath} (Commit: ${state.lastProcessedCommit || 'N/A'})`;
             }
             console.log(logMessage);
@@ -104,7 +97,7 @@ export class FileStateManager {
      * @returns A promise resolving to the loaded Vocabulary object or undefined if not found.
      */
     async loadVocabulary() {
-        const vocabularyFilePath = this.stateFilePath.replace(/\.json$/, '-vocabulary.json'); // Use a distinct file name
+        const vocabularyFilePath = this.stateFilePath.replace(/\.json$/, '-vocabulary.json');
         try {
             await this.ensureStateDirectoryExists(); // Ensure directory exists before reading
             const data = await fs.readFile(vocabularyFilePath, 'utf-8');
@@ -127,11 +120,11 @@ export class FileStateManager {
      * @param vocabulary The Vocabulary object to save.
      */
     async saveVocabulary(vocabulary) {
-        const vocabularyFilePath = this.stateFilePath.replace(/\.json$/, '-vocabulary.json'); // Use a distinct file name
+        const vocabularyFilePath = this.stateFilePath.replace(/\.json$/, '-vocabulary.json');
         console.log(`Saving vocabulary with ${Object.keys(vocabulary).length} terms to ${vocabularyFilePath}...`);
         try {
             await this.ensureStateDirectoryExists(); // Ensure directory exists before writing
-            const data = JSON.stringify(vocabulary, null, 2); // Pretty print JSON
+            const data = JSON.stringify(vocabulary, null, 2);
             await fs.writeFile(vocabularyFilePath, data, 'utf-8');
             console.log(`Vocabulary saved successfully to ${vocabularyFilePath}.`);
         }
@@ -149,7 +142,6 @@ export class FileStateManager {
     getPointsForFiles(files, currentState) {
         const pointIds = new Set();
         for (const file of files) {
-            // Ensure currentState.files[file] exists before trying to iterate
             if (currentState.files && currentState.files[file]) {
                 currentState.files[file].forEach(id => pointIds.add(id));
             }
@@ -169,46 +161,32 @@ export class FileStateManager {
     calculateNextState(currentState, filesToDeletePointsFor, newFilePoints, // Points successfully upserted in this run
     pendingChunks, // See JSDoc above for behavior
     currentCommit) {
-        // Ensure currentState has files and pendingChunks initialized if they are missing
         const currentFiles = currentState.files ?? {};
         const currentPending = currentState.pendingChunks ?? {};
         const nextFilesState = { ...currentFiles };
-        // Remove entries for files whose points were deleted/updated
         for (const file of filesToDeletePointsFor) {
             delete nextFilesState[file];
         }
-        // Add or update entries for newly processed files
-        // Overwrite is correct here, as old points were deleted earlier.
         for (const [file, points] of Object.entries(newFilePoints)) {
             nextFilesState[file] = points;
         }
         let finalPendingChunks = undefined;
-        // Case 1: Calculating INTERMEDIATE state (pendingChunks argument is provided)
         if (pendingChunks !== undefined) {
-            // Start with pending chunks from the state we are basing this on
             const updatedPending = { ...currentPending };
-            // Remove pending chunks for files whose associated points in `currentState`
-            // are being deleted/updated now.
             for (const file of filesToDeletePointsFor) {
                 delete updatedPending[file];
             }
-            // Add/overwrite with the *new* pending chunks passed in the argument
             for (const [file, chunks] of Object.entries(pendingChunks)) {
                 updatedPending[file] = chunks;
             }
-            // Only keep the pending field if it's not empty after updates
             if (Object.keys(updatedPending).length > 0) {
                 finalPendingChunks = updatedPending;
             }
-            // If updatedPending is empty, finalPendingChunks remains undefined
         }
-        // Case 2: Calculating FINAL state (pendingChunks argument is undefined)
-        // In this case, finalPendingChunks simply remains undefined, effectively clearing them.
-        // --- End Corrected Logic ---
         return {
             files: nextFilesState,
-            pendingChunks: finalPendingChunks, // Use the correctly calculated value (will be undefined for final state)
-            lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit, // Keep old commit if new one isn't provided
+            pendingChunks: finalPendingChunks,
+            lastProcessedCommit: currentCommit ?? currentState.lastProcessedCommit,
         };
     }
 }

@@ -9,12 +9,12 @@ import { Chunker } from "./chunker.js";
 import { EmbeddingService } from "./embeddingService.js";
 import { QdrantManager } from "./qdrantManager.js";
 import { BlobStateManager } from "./blobStateManager.js";
-import { FileStateManager } from "./fileStateManager.js"; // + Import FileStateManager
-import { EMPTY_STATE } from "./stateManager.js"; // Import EMPTY_STATE
+import { FileStateManager } from "./fileStateManager.js";
+import { EMPTY_STATE } from "./stateManager.js";
 import { DEFAULT_CHUNKING_OPTIONS } from "./fileTypeChunkingOptions.js";
 import { AnalysisService } from "./analysisService.js";
-import { VocabularyBuilder } from "./vocabularyBuilder.js"; // Import VocabularyBuilder
-import { initializeCodeTokenizer } from './codeTokenizer.js'; // + Add this import
+import { VocabularyBuilder } from "./vocabularyBuilder.js";
+import { initializeCodeTokenizer } from './codeTokenizer.js';
 dotenv.config();
 /**
  * Main application entry point.
@@ -22,7 +22,6 @@ dotenv.config();
  */
 async function main() {
     try {
-        // --- Command Parsing ---
         dotenv.config();
         console.log("Initializing code tokenizer...");
         await initializeCodeTokenizer(); // Call this once globally
@@ -73,7 +72,7 @@ async function main() {
         const embeddingApiDelayMs = parseInt(process.env.EMBEDDING_API_DELAY_MS ?? "1000");
         const summaryApiDelayMs = parseInt(process.env.SUMMARY_API_DELAY_MS ?? "1000");
         const qdrantPort = parseInt(process.env.QDRANT_PORT ?? "6333");
-        const diffFromCommit = process.env.DIFF_FROM_COMMIT; // Read the new optional variable
+        const diffFromCommit = process.env.DIFF_FROM_COMMIT;
         const customChunkingOptions = DEFAULT_CHUNKING_OPTIONS;
         // Vocabulary building parameters (now part of the main run)
         const vocabMinDf = parseInt(process.env.VOCAB_MIN_DF ?? "5");
@@ -188,10 +187,10 @@ async function main() {
         const pipelineOptions = {
             baseDir,
             diffOnly,
-            diffFromCommit, // Pass the new option
+            diffFromCommit,
             maxConcurrentChunking,
-            repositoryManager, // Initialized before command block
-            fileProcessor, // Initialized before command block
+            repositoryManager,
+            fileProcessor,
             analysisService,
             chunker,
             embeddingService,

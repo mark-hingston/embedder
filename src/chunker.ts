@@ -38,12 +38,12 @@ export class Chunker {
         options?: Partial<FileTypeChunkingOptions>,
         defaultSize: number = 512,
         defaultOverlap: number = 50,
-        vocabulary?: Vocabulary, // Added vocabulary parameter
-        private skipAnalysis: boolean = false // Added optional parameter to skip analysis
+        vocabulary?: Vocabulary,
+        private skipAnalysis: boolean = false
     ) {
         this.analysisService = analysisService;
         this.analysisApiDelayMs = analysisApiDelayMs;
-        this.vocabulary = vocabulary; // Store the vocabulary
+        this.vocabulary = vocabulary;
         const userChunkingOptions = options ?? {};
         // Merge default and user-provided chunking options
         this.chunkingOptions = {
@@ -55,7 +55,7 @@ export class Chunker {
         };
         this.defaultChunkSize = defaultSize;
         this.defaultChunkOverlap = defaultOverlap;
-        this.analysisApiDelayMs = analysisApiDelayMs; // Ensure this is set
+        this.analysisApiDelayMs = analysisApiDelayMs;
     }
 
     /**
@@ -79,9 +79,9 @@ export class Chunker {
              const analysisError = typeof analysisResult !== 'string' && analysisResult.analysisError;
              if (analysisError) {
                  console.warn(`Warning: LLM analysis failed for ${file.relativePath}. Proceeding with basic metadata only.`);
-                 fileLevelAnalysis = analysisResult; // Store the error result
+                 fileLevelAnalysis = analysisResult;
              } else {
-                 fileLevelAnalysis = analysisResult; // Store the successful summary
+                 fileLevelAnalysis = analysisResult;
              }
         } else {
             console.log(`Skipping LLM analysis for ${file.relativePath} as requested.`);
@@ -128,7 +128,7 @@ export class Chunker {
         }
 
         // 5. Finalise metadata for each chunk, adding the file-level analysis results and generating sparse vector
-        return Promise.all(chunks.map(async (chunk, index) => { // Added index for chunkIndex
+        return Promise.all(chunks.map(async (chunk, index) => {
             // Prepare the final metadata for the chunk
             // Start with basic chunk metadata (like source and extension, added during doc creation)
             const finalChunkMetadata: any = {
@@ -139,10 +139,10 @@ export class Chunker {
 
             // Add analysis result to metadata
             if (typeof fileLevelAnalysis === 'string') {
-                finalChunkMetadata.summary = fileLevelAnalysis; // Add summary if analysis was successful
+                finalChunkMetadata.summary = fileLevelAnalysis;
             } else {
-                finalChunkMetadata.analysisError = fileLevelAnalysis.analysisError; // Add error flag if analysis failed
-                finalChunkMetadata.source = fileLevelAnalysis.source; // Ensure source is included in error case
+                finalChunkMetadata.analysisError = fileLevelAnalysis.analysisError;
+                finalChunkMetadata.source = fileLevelAnalysis.source;
             }
 
 
@@ -152,7 +152,7 @@ export class Chunker {
                 const tokensFromText = tokenizeCode(chunk.text, finalChunkMetadata.fileExtension || '.txt', undefined);
 
                 const termFrequencies: { [term: string]: number } = {};
-                for (const token of tokensFromText) { // Use only tokensFromText
+                for (const token of tokensFromText) {
                     termFrequencies[token] = (termFrequencies[token] || 0) + 1;
                 }
 

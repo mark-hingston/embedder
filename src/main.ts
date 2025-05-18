@@ -9,14 +9,14 @@ import { Chunker } from "./chunker.js";
 import { EmbeddingService } from "./embeddingService.js";
 import { QdrantManager, QdrantDistance } from "./qdrantManager.js";
 import { BlobStateManager } from "./blobStateManager.js";
-import { FileStateManager } from "./fileStateManager.js"; // + Import FileStateManager
-import { StateManager, FilePointsState, EMPTY_STATE } from "./stateManager.js"; // Import EMPTY_STATE
+import { FileStateManager } from "./fileStateManager.js";
+import { StateManager, FilePointsState, EMPTY_STATE } from "./stateManager.js";
 import { FileTypeChunkingOptions, DEFAULT_CHUNKING_OPTIONS } from "./fileTypeChunkingOptions.js";
 import { EmbeddingPipelineOptions } from "./embeddingPipelineOptions.js";
 import { AnalysisService } from "./analysisService.js";
-import { VocabularyBuilder } from "./vocabularyBuilder.js"; // Import VocabularyBuilder
-import { Chunk } from "./chunk.js"; // Import Chunk type
-import { initializeCodeTokenizer } from './codeTokenizer.js'; // + Add this import
+import { VocabularyBuilder } from "./vocabularyBuilder.js";
+import { Chunk } from "./chunk.js";
+import { initializeCodeTokenizer } from './codeTokenizer.js';
 
 dotenv.config();
 
@@ -26,7 +26,6 @@ dotenv.config();
  */
 async function main() {
   try {
-    // --- Command Parsing ---
     dotenv.config();
 
     console.log("Initializing code tokenizer...");
@@ -84,7 +83,7 @@ async function main() {
     const embeddingApiDelayMs = parseInt(process.env.EMBEDDING_API_DELAY_MS ?? "1000");
     const summaryApiDelayMs = parseInt(process.env.SUMMARY_API_DELAY_MS ?? "1000");
     const qdrantPort = parseInt(process.env.QDRANT_PORT ?? "6333");
-    const diffFromCommit = process.env.DIFF_FROM_COMMIT; // Read the new optional variable
+    const diffFromCommit = process.env.DIFF_FROM_COMMIT;
     const customChunkingOptions: FileTypeChunkingOptions = DEFAULT_CHUNKING_OPTIONS;
 
     // Vocabulary building parameters (now part of the main run)
@@ -227,10 +226,10 @@ async function main() {
    const pipelineOptions: EmbeddingPipelineOptions = {
        baseDir,
        diffOnly,
-       diffFromCommit, // Pass the new option
+       diffFromCommit,
        maxConcurrentChunking,
-       repositoryManager, // Initialized before command block
-       fileProcessor, // Initialized before command block
+       repositoryManager,
+       fileProcessor,
        analysisService,
        chunker,
        embeddingService,

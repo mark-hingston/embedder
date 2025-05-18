@@ -2,11 +2,9 @@ import { QdrantClient, Schemas } from "@qdrant/js-client-rest";
 import { retry } from "./retry.js";
 import { RetryOptions } from "./retryOptions.js";
 
-// Type aliases for Qdrant schema types
 export type QdrantPoint = Schemas["PointStruct"];
 export type QdrantDistance = Schemas["Distance"];
 
-// Define a type that extends QdrantPoint to include sparse vectors
 export type QdrantPointWithSparse = QdrantPoint & {
     sparse_vectors?: {
         [key: string]: {
@@ -214,7 +212,6 @@ export class QdrantManager {
                 if (batch.length > 0) {
                     console.log(`Upserting batch ${batchNumber}/${totalBatches} (${batch.length} points)...`);
                     await retry(async () => {
-                        // Prepare points for upsertion, including sparse vectors if they exist
                         // Prepare points for upsertion, including sparse vectors if they exist
                         const pointsToUpsert: QdrantPointWithSparse[] = batch.map(point => {
                             const qdrantPoint: QdrantPointWithSparse = {

@@ -89,7 +89,6 @@ export class EmbeddingPipeline {
             }
             
             // Chunk the content of processable files, including LLM analysis metadata
-            // The chunker instance from this.options.chunker will now use the loaded vocabulary (if any)
             const fileChunksMap = await this.options.chunker.chunkFiles(
                 processableFiles,
                 this.options.maxConcurrentChunking
@@ -188,19 +187,19 @@ export class EmbeddingPipeline {
 
 
             if (allTextsToEmbed.length === 0) {
-                 console.log("No pending or new texts to process after analysis.");
-                 // Save state reflecting only deletions and commit hash
-                 const currentCommit = await this.options.repositoryManager.getCurrentCommit();
-                 const finalState = this.options.stateManager.calculateNextState(
-                     previousState,
-                     filesToDeletePointsFor,
-                     {}, // No new points upserted
-                     undefined, // No pending chunks remain
-                     currentCommit
-                 );
-                 await this.options.stateManager.saveState(finalState);
-                 console.log("Embedding pipeline finished: No texts to embed.");
-                 return;
+                console.log("No pending or new texts to process after analysis.");
+                // Save state reflecting only deletions and commit hash
+                const currentCommit = await this.options.repositoryManager.getCurrentCommit();
+                const finalState = this.options.stateManager.calculateNextState(
+                    previousState,
+                    filesToDeletePointsFor,
+                    {}, // No new points upserted
+                    undefined, // No pending chunks remain
+                    currentCommit
+                );
+                await this.options.stateManager.saveState(finalState);
+                console.log("Embedding pipeline finished: No texts to embed.");
+                return;
             }
 
             console.log(`Prepared ${allTextsToEmbed.length} total texts (${fileSummariesToEmbed.length} file summaries, ${allChunksToEmbed.length} chunks) for embedding.`);

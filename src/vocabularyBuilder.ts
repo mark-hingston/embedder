@@ -1,6 +1,4 @@
-// File: src/vocabularyBuilder.ts
 import natural from 'natural';
-const PorterStemmer = natural.PorterStemmer; // Instance
 
 import { processTextToFinalTokens } from "./tokenProcessor.js";
 import { StateManager } from "./stateManager.js";
@@ -15,10 +13,6 @@ interface TermStats {
   termFrequency: number;
   documentFrequency: number;
 }
-
-// Define a default set of stop words
-
-// Helper function to split camelCase and snake_case words
 
 export class VocabularyBuilder {
   private stateManager: StateManager;
@@ -116,7 +110,7 @@ export class VocabularyBuilder {
       });
 
     for (let i = 0; i < Math.min(sortedTerms.length, targetSize); i++) {
-      vocabulary[sortedTerms[i][0]] = i; // Assign index based on sorted order
+      vocabulary[sortedTerms[i][0]] = i;
     }
 
     console.log(

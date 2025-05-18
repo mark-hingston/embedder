@@ -46,7 +46,7 @@ export class BlobStateManager implements StateManager {
         }
     } catch (error) {
         console.error(`Error ensuring container '${this.containerClient.containerName}' exists:`, error);
-        throw error; // Propagate error
+        throw error;
     }
   }
 
@@ -121,7 +121,7 @@ export class BlobStateManager implements StateManager {
         ...state,
         pendingChunks: state.pendingChunks ?? {}
       };
-      const stateString = JSON.stringify(stateToSave, null, 2); // Pretty-print JSON
+      const stateString = JSON.stringify(stateToSave, null, 2);
       const buffer = Buffer.from(stateString, "utf8");
       await blobClient.uploadData(buffer, {
           blobHTTPHeaders: { blobContentType: "application/json" }
@@ -129,7 +129,7 @@ export class BlobStateManager implements StateManager {
       console.log(`State blob '${this.blobName}' saved successfully.`);
     } catch (error) {
       console.error(`ERROR saving state blob '${this.blobName}': ${error}`);
-      throw error; // Re-throw the original error to signal failure
+      throw error;
     }
   }
 /**
@@ -137,7 +137,7 @@ export class BlobStateManager implements StateManager {
    * @returns A promise resolving to the loaded Vocabulary object or undefined if not found.
    */
   async loadVocabulary(): Promise<Vocabulary | undefined> {
-    const vocabularyBlobName = this.blobName.replace(/\.json$/, '-vocabulary.json'); // Use a distinct blob name
+    const vocabularyBlobName = this.blobName.replace(/\.json$/, '-vocabulary.json');
     const blobClient = this.containerClient.getBlockBlobClient(vocabularyBlobName);
     try {
       const downloadResponse = await blobClient.downloadToBuffer();
@@ -166,7 +166,7 @@ export class BlobStateManager implements StateManager {
     console.log(`Saving vocabulary with ${Object.keys(vocabulary).length} terms to blob '${vocabularyBlobName}'...`);
     const blobClient = this.containerClient.getBlockBlobClient(vocabularyBlobName);
     try {
-      const vocabularyString = JSON.stringify(vocabulary, null, 2); // Pretty-print JSON
+      const vocabularyString = JSON.stringify(vocabulary, null, 2);
       const buffer = Buffer.from(vocabularyString, "utf8");
       await blobClient.uploadData(buffer, {
           blobHTTPHeaders: { blobContentType: "application/json" }
@@ -174,11 +174,10 @@ export class BlobStateManager implements StateManager {
       console.log(`Vocabulary blob '${vocabularyBlobName}' saved successfully.`);
     } catch (error) {
       console.error(`ERROR saving vocabulary blob '${vocabularyBlobName}': ${error}`);
-      throw error; // Re-throw the original error
+      throw error;
     }
   }
 
-  // --- Pure Logic Methods (copied/adapted from original StateManager) ---
 
   getPointsForFiles(files: Set<string>, currentState: FilePointsState): string[] {
     const pointIds = new Set<string>();
