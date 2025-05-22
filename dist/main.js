@@ -46,9 +46,6 @@ async function main() {
         if (stateManagerType === "blob") {
             requiredEnvVars.push("AZURE_STORAGE_CONNECTION_STRING", "AZURE_STORAGE_CONTAINER_NAME");
         }
-        else if (stateManagerType === "file") {
-            requiredEnvVars.push("STATE_FILE_PATH");
-        }
         else {
             throw new Error(`Invalid STATE_MANAGER_TYPE: ${stateManagerType}. Must be 'blob' or 'file'.`);
         }
@@ -118,7 +115,7 @@ async function main() {
             stateManager = new BlobStateManager(process.env.AZURE_STORAGE_CONNECTION_STRING, process.env.AZURE_STORAGE_CONTAINER_NAME);
         }
         else { // stateManagerType === "file"
-            stateManager = new FileStateManager(process.env.STATE_FILE_PATH);
+            stateManager = new FileStateManager("file-points.json");
         }
         // Initialise common services
         console.log("Initialising common services...");
@@ -165,9 +162,17 @@ async function main() {
         await vocabularyBuilder.buildVocabulary(vocabChunks, vocabMinDf, vocabMaxDf, vocabTargetSize);
         console.log("Integrated vocabulary building finished.");
         // --- End Vocabulary Building ---
+        // Load the vocabulary for the main pipeline's Chunker
+        console.log("Loading vocabulary for main pipeline chunker...");
+        const vocabulary = await stateManager.loadVocabulary();
+        if (!vocabulary || Object.keys(vocabulary).length === 0) {
+            console.warn("WARNING: Vocabulary is empty or not found after building. Sparse vectors will not be generated.");
+        }
+        else {
+            console.log(`Successfully loaded vocabulary with ${Object.keys(vocabulary).length} terms for main pipeline.`);
+        }
         // Initialize Chunker for the main pipeline (analysis is needed here)
-        const chunker = new Chunker(analysisService, summaryApiDelayMs, customChunkingOptions, defaultChunkSize, defaultChunkOverlap
-        // vocabulary is loaded and passed to chunker by the pipeline itself
+        const chunker = new Chunker(analysisService, summaryApiDelayMs, customChunkingOptions, defaultChunkSize, defaultChunkOverlap, vocabulary // Pass the loaded vocabulary directly
         );
         const qdrantClient = new QdrantClient({
             host: process.env.QDRANT_HOST,

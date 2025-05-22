@@ -137,7 +137,7 @@ export class BlobStateManager implements StateManager {
    * @returns A promise resolving to the loaded Vocabulary object or undefined if not found.
    */
   async loadVocabulary(): Promise<Vocabulary | undefined> {
-    const vocabularyBlobName = this.blobName.replace(/\.json$/, '-vocabulary.json');
+    const vocabularyBlobName = 'vocabulary.json';
     const blobClient = this.containerClient.getBlockBlobClient(vocabularyBlobName);
     try {
       const downloadResponse = await blobClient.downloadToBuffer();

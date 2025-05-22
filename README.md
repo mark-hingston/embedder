@@ -11,7 +11,7 @@ This project provides a configurable pipeline to process files within a Git repo
     *   The pipeline attempts to fetch full Git history (`git fetch --depth=0`) if the specified `DIFF_FROM_COMMIT` is not found locally. An error occurs if the commit remains invalid after fetching.
 *   **State Management:** Persists the mapping between files and their corresponding Qdrant point IDs, along with the `lastProcessedCommit` hash representing the repository state successfully processed in the *previous* run. Supports two modes configured via `STATE_MANAGER_TYPE`:
     *   **Azure Blob Storage (`blob`):** Stores state in a specified Azure Blob Storage container.
-    *   **Local File System (`file`):** Stores state in a local JSON file specified by `STATE_FILE_PATH`.
+    *   **Local File System (`file`):** Stores state in a local JSON file.
 *   **LLM-Powered Code Analysis:** Uses a configurable LLM (e.g., Azure OpenAI) via the AI SDK to analyse code files *once per file*, producing a string summary of the file's content and purpose.
    *   This file-level summary is added as metadata to *all* generated chunks originating from that file under the `summary` key.
    *   **Analysis Caching:** Caches successful analysis results locally (`.analysis_cache/`) based on file content hash. Avoids re-analysing unchanged files on subsequent runs, improving performance and resilience to interruptions.

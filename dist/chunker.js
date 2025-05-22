@@ -1,7 +1,7 @@
 import { MDocument } from "@mastra/rag";
 import { DEFAULT_CHUNKING_OPTIONS } from "./fileTypeChunkingOptions.js";
 import pLimit from 'p-limit'; // Used for limiting concurrency during file chunking
-import { tokenizeCode } from "./codeTokenizer.js";
+import { processTextToFinalTokens } from './tokenProcessor.js'; // Import the shared token processor
 /**
  * Handles the chunking of file content based on file type and analysis results.
  * It uses the `@mastra/rag` library for the underlying chunking logic
@@ -71,7 +71,6 @@ export class Chunker {
         else {
             console.log(`Skipping LLM analysis for ${file.relativePath} as requested.`);
         }
-        // 2. Prepare document for chunking, using the file content
         const doc = new MDocument({
             docs: [{ text: file.content, metadata: { source: file.relativePath, fileExtension: file.relativePath.slice(file.relativePath.lastIndexOf('.')) } }], // Initial metadata with source and extension
             type: file.strategy,
@@ -129,11 +128,11 @@ export class Chunker {
             }
             // Generate sparse vector based on the vocabulary, using only chunk.text
             if (this.vocabulary) {
-                // Tokenize only the chunk text for sparse vector generation
-                const tokensFromText = tokenizeCode(chunk.text, finalChunkMetadata.fileExtension || '.txt', undefined);
+                // Use the shared token processing function for sparse vector generation
+                const processedTermsForLookup = processTextToFinalTokens(chunk.text);
                 const termFrequencies = {};
-                for (const token of tokensFromText) {
-                    termFrequencies[token] = (termFrequencies[token] || 0) + 1;
+                for (const processedTerm of processedTermsForLookup) {
+                    termFrequencies[processedTerm] = (termFrequencies[processedTerm] || 0) + 1;
                 }
                 const indices = [];
                 const values = [];
@@ -147,7 +146,6 @@ export class Chunker {
                     finalChunkMetadata.sparseVector = { indices, values };
                 }
                 else {
-                    // Ensure sparseVector is not undefined if no terms matched, to maintain consistent payload structure
                     finalChunkMetadata.sparseVector = { indices: [], values: [] };
                 }
             }
@@ -205,7 +203,6 @@ export class Chunker {
                 }
             }
         };
-        // Use p-limit to control the concurrency of processEntry calls
         const limit = pLimit(maxConcurrency);
         // Pass the index along with the entry to processEntry
         const promises = fileEntries.map((entry, index) => limit(() => processEntry(entry, index)));

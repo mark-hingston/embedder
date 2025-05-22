@@ -55,22 +55,6 @@ export class EmbeddingPipeline {
                 console.log("Embedding pipeline finished: Only deletions were processed.");
                 return;
             }
-            // 6. Load vocabulary and set it on the Chunker instance
-            try {
-                const vocabulary = await this.options.stateManager.loadVocabulary();
-                if (vocabulary) {
-                    console.log(`Successfully loaded vocabulary with ${Object.keys(vocabulary).length} terms.`);
-                    this.options.chunker.vocabulary = vocabulary;
-                }
-                else {
-                    console.log("No vocabulary found or vocabulary is empty. Chunker will proceed without sparse vectors.");
-                    this.options.chunker.vocabulary = undefined;
-                }
-            }
-            catch (error) {
-                console.warn("Failed to load vocabulary. Chunker will proceed without sparse vectors:", error);
-                this.options.chunker.vocabulary = undefined;
-            }
             // Chunk the content of processable files, including LLM analysis metadata
             const fileChunksMap = await this.options.chunker.chunkFiles(processableFiles, this.options.maxConcurrentChunking);
             // Early exit if no chunks were generated (e.g., all files were empty or failed chunking),
